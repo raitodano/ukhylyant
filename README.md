@@ -44,8 +44,20 @@
 
 ## Встановлення APK
 
-Готовий APK — у розділі **Releases** репозиторію (або в артефактах GitHub Actions після кожного пушу в `main`).
+**[⬇ Завантажити останню версію APK](https://github.com/raitodano/ukhylyant/releases/latest/download/ukhylyant.apk)**
+(постійне посилання завжди веде на найновіший реліз; усі версії — у розділі **Releases**).
+
 На Android дозволь «встановлення з невідомих джерел» для браузера чи файлового менеджера й відкрий файл.
+
+## Нова версія
+
+Релізи випускаються автоматично (`.github/workflows/android.yml`): кожен пуш у `main` збирає APK,
+а якщо для `versionName` з `android/app/build.gradle` ще немає релізу — створюється тег `v<версія>`
+і GitHub Release з APK та текстом із `RELEASE_NOTES.md`.
+
+1. Збільш `versionCode` і `versionName` в `android/app/build.gradle`.
+2. Онови `RELEASE_NOTES.md`.
+3. Запуш у `main`.
 
 ## Структура
 
@@ -53,7 +65,7 @@
 web/            гра: один файл index.html + шрифт Rubik (OFL) для офлайну
 android/        Android-обгортка (WebView), Gradle-проєкт
 docs/           скриншоти й іконка
-.github/        CI: збирає APK і додає його до релізу на тегах v*
+.github/        CI: збирає APK і сам випускає реліз для нової версії
 ```
 
 ## Збірка
