@@ -840,8 +840,8 @@ function caught(msg){
   overMsg=msg||((sk.caught&&rnd()<0.6)?pick(sk.caught):pick(CAUGHT)); musicStop();
 }
 // removes everything in [a, b + ~1 s of running] so a ride / a landing never ends inside an obstacle
-function clearAhead(a,b){
-  const b2=b+runSpeed*0.9;
+function clearAhead(a,b,sec){
+  const b2=b+runSpeed*(sec||0.9);
   obs=obs.filter(o=>o.d+o.len<a||o.d>b2);
   items=items.filter(i=>i.d<a||i.d>b2);
   if(nextRow<b2){ nextRow=b2+4; lastRowEnd=b2; }
@@ -865,7 +865,7 @@ function startRide(){
   const room=borderNeed-280-dist;
   if(room<160){ toast('КОРЕШ ЗАСТРЯГ У ЗАТОРІ…'); return; }
   const len=Math.min(runSpeed*1.4+72*3.4+30,room);
-  clearAhead(dist-2,dist+len);
+  clearAhead(dist-2,dist+len,1.5);   // ~1.5 s of empty road after the drop-off
   const lane=p.lane===0?(rnd()<0.5?-1:1):0;
   ride={ph:'arrive',t:0,lane,z:1.2,start:dist,len,col:pick(CARCOLS)};
   for(let c=dist+runSpeed*1.4+10;c<dist+len-25;c+=4.5) addCoin(lane*LANE,0.9,c);
@@ -1049,6 +1049,7 @@ function update(dt){
     cleanT+=dt; if(cleanT>0.5){ cleanT=0; cleanup(); }
   } else if(state==='caught'||state==='over'||state==='win'){
     caughtT+=dt; prevDist=dist; physics(dt);
+    if(ride){ ride.t+=dt; ride.z+=dt*(18+ride.t*40); if(ride.z>FAR) ride=null; } // the buddy drives off
     if(state==='caught'&&caughtT>1.5) gameOver(false);
     if(state==='win'&&caughtT>1.8) gameOver(true);
   }
