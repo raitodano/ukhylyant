@@ -24,12 +24,23 @@ export function buildRoute(seed = 1709) {
     push(60 + R() * 60, 'street');
   }
   // integrate the centre line
-  let th = 0, x = 0, z = 0, si = 0;
+  const corners = SEGS.filter((q) => q.type === 'corner');
+  let ci = 0;
+  const flatW = (i) => {
+    while (ci < corners.length - 1 && i > corners[ci].e + 25) ci++;
+    const q = corners[ci]; if (!q) return 1;
+    const g = Math.max(q.s - 10 - i, i - q.e - 10, 0);   // distance outside the flat zone
+    const t = Math.min(1, g / 20); return t * t * (3 - 2 * t);
+  };
+  let th = 0, x = 0, z = 0, si = 0, h = 0;
   for (let i = 0; i <= MAXD + 1; i++) {
     while (si < SEGS.length - 1 && i >= SEGS[si].e) si++;
     const sg = SEGS[si];
     PX[i] = x; PZ[i] = z; TH[i] = th;
-    PY[i] = 5.5 * Math.sin(i / 230) + 2.6 * Math.sin(i / 97 + 1) + 1.2 * Math.sin(i / 41);   // Lviv is hilly: gentle slopes (≈5 %)
+    PY[i] = h;
+    // Lviv is hilly (≈5 % slopes), but junctions are flat so the side street meets the corner cleanly
+    const grade = 5.5 / 230 * Math.cos(i / 230) + 2.6 / 97 * Math.cos(i / 97 + 1) + 1.2 / 41 * Math.cos(i / 41);
+    h += grade * STEP * flatW(i);
     const k = sg && i >= sg.s && i < sg.e ? sg.k : 0;
     th += k * STEP; x += Math.sin(th) * STEP; z += -Math.cos(th) * STEP;
   }

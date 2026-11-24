@@ -63,6 +63,7 @@ const M = {
   stij: new MeshLambertMaterial({ map: labelTexture('СТІЙ!', '#d63028', '#ffffff'), side: DoubleSide }),
   busBody: new MeshLambertMaterial({ map: T.bus }),
   white: new MeshLambertMaterial({ color: '#eef0f2' }),
+  busPlate: new MeshLambertMaterial({ map: labelTexture('ТЦК', '#ffd21f', '#1b1b1b', 192, 56) }),
   glass: new MeshLambertMaterial({ color: '#2b3a4e' }),
   tyre: new MeshLambertMaterial({ color: '#1d1d20' }),
   shadow: new MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 0.28, depthWrite: false }),
@@ -147,6 +148,7 @@ function buildChunk(c) {
     const sg = segAt(d) || { e: d1, type: 'street' }, e = Math.min(sg.e, d1);
     const wide = sg.type === 'square' ? 34 : sg.type === 'corner' ? 9 : 5.8;
     for (const s of [-1, 1]) {
+      if (sg.type === 'corner' && s === -sg.dir) continue;   // outer side of a corner = the junction (drawn with the side street)
       ribbon(gWalk, d, e, s > 0 ? 3.4 : -wide, s > 0 ? wide : -3.4, 0.14, white, 2, 2, false);
       curb(gWalk, d, e, s * 3.4, 0.14, col('#d8d2c6'));
       if (sg.type !== 'square') ribbon(gWalk, d, e, s > 0 ? wide : -18, s > 0 ? 18 : -wide, 0.13, yard, 2, 2, false);
@@ -170,8 +172,14 @@ function buildChunk(c) {
     if (q.type !== 'corner' || q.s < d0 || q.s >= d1) continue;
     const F = frame(q.s, {}), P = place(q.s, 0, 0, {}), Fr = makeFrame(P.wx, P.wy, P.wz, F.th);
     const R = (x, y, z) => L(Fr, x, y, z);
-    gRoad.quad(R(0, 0.002, -3.4), R(48, 0.002, -3.4), R(48, 0.002, 3.4), R(0, 0.002, 3.4), [0, 1, 0], [0, 0], [0, 9.6], [1, 9.6], [1, 0], white);
-    gWalk.quad(R(0, 0.13, -q.dir * 5.8), R(48, 0.13, -q.dir * 5.8), R(48, 0.13, -q.dir * 3.4), R(0, 0.13, -q.dir * 3.4), [0, 1, 0], [0, 0], [24, 0], [24, 1], [0, 1], white);
+    const o = -q.dir, up = [0, 1, 0], flat = (g, x0, x1, z0, z1, y, cl) => g.quad(R(x0, y, z0), R(x1, y, z0), R(x1, y, z1), R(x0, y, z1), up, [z0 / 2, x0 / 2], [z0 / 2, x1 / 2], [z1 / 2, x1 / 2], [z1 / 2, x0 / 2], cl);
+    // side street carrying straight on; it sits 2 cm under the corner road so they never z-fight
+    gRoad.quad(R(0, -0.02, -3.4), R(48, -0.02, -3.4), R(48, -0.02, 3.4), R(0, -0.02, 3.4), up, [0, 0], [0, 9.6], [1, 9.6], [1, 0], white);
+    flat(gWalk, -6, 48, o * 3.4, o * 5.8, 0.14, white);            // outer sidewalk, from before the corner on
+    flat(gWalk, -6, 48, o * 5.8, o * 18, 0.13, yard);              // outer yard under the houses
+    flat(gWalk, -6, 2 * CORNER_R - 10, q.dir * 3.4, q.dir * 16, -0.05, yard);        // ground inside the turn (under the corner road)
+    flat(gWalk, 2 * CORNER_R - 10, 48, q.dir * 3.4, q.dir * 5.8, 0.14, white);   // inner sidewalk after the crossing
+    flat(gWalk, 2 * CORNER_R - 10, 48, q.dir * 5.8, q.dir * 16, 0.13, yard);
     for (let x = 4; x < 46; x += 8) box(gWall, Fr, x, x + 7.6, -2, 10.5 + (x % 3), -q.dir * 15, -q.dir * 6, col(pick(PASTEL)), 1.9, 3.3, true);
     for (let x = 2 * CORNER_R + 4; x < 46; x += 8) box(gWall, Fr, x, x + 7.6, -2, 10.5, q.dir * 6, q.dir * 15, col(pick(PASTEL)), 1.9, 3.3, true);
   }
@@ -237,7 +245,7 @@ const tck = [figure({ suit: '#5f6b3a', pants: '#4e5830', skin: '#e0a983', hair: 
   figure({ suit: '#5f6b3a', pants: '#4e5830', skin: '#e0a983', hair: '#2e2418', shoe: '#1b1b1b', cap: '#4b5530' }, 'ТЦК')];
 
 // ---------------------------------------------------------------- obstacles, coins
-const OG = { bar: new BoxGeometry(2.0, 1.0, 0.5), pole: new BoxGeometry(0.16, 2.75, 0.16), banner: new PlaneGeometry(2.0, 1.2), bus: new BoxGeometry(5.2, 2.35, 2.0), wheel: new CylinderGeometry(0.42, 0.42, 0.3, 14), coin: new CylinderGeometry(0.36, 0.36, 0.08, 18) };
+const OG = { bar: new BoxGeometry(2.0, 1.0, 0.5), pole: new BoxGeometry(0.16, 2.75, 0.16), banner: new PlaneGeometry(2.0, 1.2), bus: new BoxGeometry(5.2, 2.35, 2.0), wheel: new CylinderGeometry(0.42, 0.42, 0.3, 14), coin: new CylinderGeometry(0.36, 0.36, 0.08, 18), wind: new PlaneGeometry(1.8, 1.05), plate: new PlaneGeometry(1.5, 0.42) };
 let obs = [], coinsList = [];
 const coinMesh = new InstancedMesh(OG.coin, M.coin, 260); coinMesh.count = 0; coinMesh.frustumCulled = false; scene.add(coinMesh);
 const dummy = new Object3D(), V = {};
@@ -245,8 +253,8 @@ function placeObj(o3, d, x, y, yaw = 0) { const P = place(d, x, y, V); o3.positi
 function makeObstacle(o) {
   const g = new Group();
   if (o.t === 'bar') { const m = new Mesh(OG.bar, M.stripe); m.position.y = 0.5; m.rotation.y = Math.PI / 2; g.add(m); }
-  else if (o.t === 'gate') { for (const s of [-1.05, 1.05]) { const p = new Mesh(OG.pole, M.gatePole); p.position.set(0, 1.37, s); g.add(p); } const b = new Mesh(OG.banner, M.stij); b.position.y = 1.9; b.rotation.y = Math.PI / 2; g.add(b); }
-  else if (o.t === 'bus') { const b = new Mesh(OG.bus, [M.white, M.white, M.white, M.white, M.busBody, M.busBody]); b.position.y = 1.53; g.add(b); for (const ax of [-1.7, 1.7]) for (const s of [-0.9, 0.9]) { const w = new Mesh(OG.wheel, M.tyre); w.rotation.x = Math.PI / 2; w.position.set(ax, 0.42, s); g.add(w); } }
+  else if (o.t === 'gate') { for (const s of [-1.05, 1.05]) { const p = new Mesh(OG.pole, M.gatePole); p.position.set(0, 1.37, s); g.add(p); } const b = new Mesh(OG.banner, M.stij); b.position.y = 1.9; b.rotation.y = -Math.PI / 2; g.add(b); }
+  else if (o.t === 'bus') { const b = new Mesh(OG.bus, [M.white, M.white, M.white, M.white, M.busBody, M.busBody]); b.position.y = 1.53; g.add(b); const ws = new Mesh(OG.wind, M.glass); ws.position.set(-2.62, 1.95, 0); ws.rotation.y = -Math.PI / 2; g.add(ws); const pl = new Mesh(OG.plate, M.busPlate); pl.position.set(-2.62, 0.75, 0); pl.rotation.y = -Math.PI / 2; g.add(pl); for (const ax of [-1.7, 1.7]) for (const s of [-0.9, 0.9]) { const w = new Mesh(OG.wheel, M.tyre); w.rotation.x = Math.PI / 2; w.position.set(ax, 0.42, s); g.add(w); } }
   else if (o.t === 'patrol') { o.fig = figure({ suit: '#5f6b3a', pants: '#4e5830', skin: '#e0a983', hair: '#2e2418', shoe: '#1b1b1b', cap: '#4b5530', face: true }); return; }
   scene.add(g); o.mesh = g;
 }
@@ -299,7 +307,7 @@ function reset() {
   Object.assign(p, { lane: 0, prevLane: 0, x: 0, prevX: 0, y: 0, vy: 0, onGround: true, slide: 0, run: 0, inv: 0, stumble: 0 });
   nextRow = 60; lastRowEnd = 6;
   for (const [, g] of chunks) disposeChunk(g); chunks.clear();
-  camPos = null;
+  camPos = null; camSnap = true;
 }
 function act(a) {
   if (state !== 'play') return;
@@ -327,7 +335,7 @@ function collide() {
     return;
   }
 }
-let camPos = null;
+let camPos = null, camSnap = true;
 const camTarget = { x: 0, y: 0, z: 0 };
 function update(dt) {
   time += dt;
@@ -364,6 +372,7 @@ function update(dt) {
   // camera rides the route: it swings round real corners and follows the slopes
   const C = place(Math.max(0, dist - 6.5), p.x * 0.5, 4.6 + p.y * 0.3, {}), Tg = place(dist + 9, p.x * 0.6, 1.1 + p.y * 0.5, {});
   if (!camPos) camPos = { x: C.wx, y: C.wy, z: C.wz };
+  if (camSnap) { camTarget.x = Tg.wx; camTarget.y = Tg.wy; camTarget.z = Tg.wz; camSnap = false; }
   const k = 1 - Math.exp(-dt * 7);
   camPos.x += (C.wx - camPos.x) * k; camPos.y += (C.wy - camPos.y) * k; camPos.z += (C.wz - camPos.z) * k;
   camTarget.x += (Tg.wx - camTarget.x) * Math.min(1, k * 1.4); camTarget.y += (Tg.wy - camTarget.y) * Math.min(1, k * 1.4); camTarget.z += (Tg.wz - camTarget.z) * Math.min(1, k * 1.4);
@@ -442,5 +451,5 @@ function loop(now) {
 buildRoute(); resize(); setNight(false); reset(); show('start');
 requestAnimationFrame(loop);
 // debug / test hook
-window.__g3 = { get state() { return state; }, get dist() { return dist; }, get lane() { return p.lane; }, get score() { return score; }, act, start, setNight, renderer, get chunks() { return chunks.size; }, get obs() { return obs.length; },
-  warp(d) { dist = prevDist = d; nextRow = d + 40; lastRowEnd = d + 6; for (const o of obs) removeObstacle(o); obs = []; coinsList = []; camPos = null; }, segs: SEGS, setSpeedTime(t) { runTime = t; } };
+window.__g3 = { get state() { return state; }, get dist() { return dist; }, get lane() { return p.lane; }, get score() { return score; }, act, start, setNight, renderer, camera, frame: (d) => place(d, 0, 0, {}), get chunks() { return chunks.size; }, get obs() { return obs.length; }, get obsList() { return obs.map((o) => ({ t: o.t, lane: o.lane, d: o.d })); }, pause: pauseGame,
+  warp(d) { dist = prevDist = d; nextRow = d + 40; lastRowEnd = d + 6; for (const o of obs) removeObstacle(o); obs = []; coinsList = []; camPos = null; camSnap = true; }, segs: SEGS, setSpeedTime(t) { runTime = t; } };
