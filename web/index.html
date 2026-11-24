@@ -411,15 +411,17 @@ function fadeA(z){ return z>FAR-35 ? clamp((FAR-z)/35,0,1) : 1; }
 function fogFrac(z){ return z<38?0:Math.min(0.95,(z-38)/(FAR-38)*0.95); }
 // Road bends are VISUAL only: every point at depth z is shifted sideways by OX(z), the
 // lateral offset of the road centre line ahead of the runner. Gameplay stays 3 straight lanes.
-const OXT=new Float32Array(240); let curvy=false, curvesOn=true, headAcc=0;
+const OXT=new Float32Array(240); let curvy=false, curvesOn=true, headAcc=0, curvK=1;
 function OX(z){ if(!curvy) return 0; const s=z-PZ; if(s<=0) return 0; const i=s|0; if(i>=OXT.length-1) return OXT[OXT.length-1]; return OXT[i]+(OXT[i+1]-OXT[i])*(s-i); }
 function buildCurve(){
   curvy=false; if(!curvesOn) return;
   let h=0,x=0,mx=0; OXT[0]=0;
   for(let i=1;i<OXT.length;i++){ h+=curveK(dist+i-0.5); x+=h; OXT[i]=x; const a=Math.abs(x); if(a>mx) mx=a; }
-  curvy=mx>0.02;
+  curvy=mx>0.02; curvK=clamp(mx/2.5,1.2,4.5);
 }
-function segN(z0,z1){ return curvy?Math.max(1,Math.min(30,Math.ceil((z1-z0)/4.5))):1; }
+// slices are spaced geometrically (even on screen) and only as many as the current bend needs
+function segN(z0,z1){ return curvy&&z1>z0*1.06?Math.max(1,Math.min(14,Math.ceil(Math.log(z1/z0)*curvK))):1; }
+const zAt=(z0,z1,i,n)=>z0*Math.pow(z1/z0,i/n);
 const SX=(x,z)=>CX+(x+OX(z)-camX)*F/z;
 const SY=(y,z)=>HY+(camY-y)*F/z;
 
@@ -430,21 +432,21 @@ function faceZ(x0,x1,y0,y1,z,fill){ if(z<NEAR) return; const s=F/z, o=OX(z)-camX
 function pathX(x,y0,y1,z0,z1){
   const n=segN(z0,z1);
   if(n===1){ const s0=F/z0,s1=F/z1, X0=CX+(x+OX(z0)-camX)*s0, X1=CX+(x+OX(z1)-camX)*s1; ctx.moveTo(X0,HY+(camY-y0)*s0); ctx.lineTo(X0,HY+(camY-y1)*s0); ctx.lineTo(X1,HY+(camY-y1)*s1); ctx.lineTo(X1,HY+(camY-y0)*s1); ctx.closePath(); return; }
-  for(let i=0;i<=n;i++){ const z=z0+(z1-z0)*i/n, s=F/z, X=CX+(x+OX(z)-camX)*s, Y=HY+(camY-y0)*s; if(i) ctx.lineTo(X,Y); else ctx.moveTo(X,Y); }
-  for(let i=n;i>=0;i--){ const z=z0+(z1-z0)*i/n, s=F/z; ctx.lineTo(CX+(x+OX(z)-camX)*s,HY+(camY-y1)*s); }
+  for(let i=0;i<=n;i++){ const z=zAt(z0,z1,i,n), s=F/z, X=CX+(x+OX(z)-camX)*s, Y=HY+(camY-y0)*s; if(i) ctx.lineTo(X,Y); else ctx.moveTo(X,Y); }
+  for(let i=n;i>=0;i--){ const z=zAt(z0,z1,i,n), s=F/z; ctx.lineTo(CX+(x+OX(z)-camX)*s,HY+(camY-y1)*s); }
   ctx.closePath();
 }
 function faceX(x,y0,y1,z0,z1,fill){ ctx.fillStyle=fill; ctx.beginPath(); pathX(x,y0,y1,z0,z1); ctx.fill(); }
 function pathY(x0,x1,y,z0,z1){
   const n=segN(z0,z1);
   if(n===1){ const s0=F/z0,s1=F/z1, Y0=HY+(camY-y)*s0, Y1=HY+(camY-y)*s1, o0=OX(z0)-camX, o1=OX(z1)-camX; ctx.moveTo(CX+(x0+o0)*s0,Y0); ctx.lineTo(CX+(x1+o0)*s0,Y0); ctx.lineTo(CX+(x1+o1)*s1,Y1); ctx.lineTo(CX+(x0+o1)*s1,Y1); ctx.closePath(); return; }
-  for(let i=0;i<=n;i++){ const z=z0+(z1-z0)*i/n, s=F/z, X=CX+(x0+OX(z)-camX)*s, Y=HY+(camY-y)*s; if(i) ctx.lineTo(X,Y); else ctx.moveTo(X,Y); }
-  for(let i=n;i>=0;i--){ const z=z0+(z1-z0)*i/n, s=F/z; ctx.lineTo(CX+(x1+OX(z)-camX)*s,HY+(camY-y)*s); }
+  for(let i=0;i<=n;i++){ const z=zAt(z0,z1,i,n), s=F/z, X=CX+(x0+OX(z)-camX)*s, Y=HY+(camY-y)*s; if(i) ctx.lineTo(X,Y); else ctx.moveTo(X,Y); }
+  for(let i=n;i>=0;i--){ const z=zAt(z0,z1,i,n), s=F/z; ctx.lineTo(CX+(x1+OX(z)-camX)*s,HY+(camY-y)*s); }
   ctx.closePath();
 }
 function faceY(x0,x1,y,z0,z1,fill){ ctx.fillStyle=fill; ctx.beginPath(); pathY(x0,x1,y,z0,z1); ctx.fill(); }
 // a ground-level line along the road (follows the bend)
-function lineZ(x,y,z0,z1){ const n=segN(z0,z1); for(let i=0;i<=n;i++){ const z=z0+(z1-z0)*i/n; if(i) ctx.lineTo(SX(x,z),SY(y,z)); else ctx.moveTo(SX(x,z),SY(y,z)); } }
+function lineZ(x,y,z0,z1){ const n=segN(z0,z1); for(let i=0;i<=n;i++){ const z=zAt(z0,z1,i,n); if(i) ctx.lineTo(SX(x,z),SY(y,z)); else ctx.moveTo(SX(x,z),SY(y,z)); } }
 // is x on the camera's right at depth z (i.e. we see its left-facing side)?
 const rightOf=(x,z)=>x+OX(z)>camX;
 function strip(x0,x1,c){ faceY(x0,x1,0,NEAR,FAR,C(c,0)); }
@@ -1582,7 +1584,7 @@ function winsF(b,xi,z0,mode){
     return;
   }
   for(let c=0,dd=1.0;dd+P.ww<b.len-0.4;c++,dd+=P.cs){
-    const wz0=z0+dd, wz1=wz0+P.ww; if(wz0<NEAR) continue; if(wz0>115) break;
+    const wz0=z0+dd, wz1=wz0+P.ww; if(wz0<NEAR) continue; if(wz0>(mode>=4?65:95)) break;
     if(mode===6){ const g=wz0-(P.cs-P.ww)*0.5; if(g>NEAR) pathX(xi,0.4,b.floors*fh+0.3,g-0.14,g+0.14); continue; }
     if(mode===2&&hsh(b.seed+c*3)%3!==0) continue;
     for(let f=f0;f<b.floors;f++){
@@ -1609,8 +1611,8 @@ function winsZF(b,x0,x1,z0,lit){
 // a sloped surface between two lines that run along the road (roofs)
 function pathSlope(xa,ya,xb,yb,z0,z1){
   const n=segN(z0,z1);
-  for(let i=0;i<=n;i++){ const z=z0+(z1-z0)*i/n; if(i) ctx.lineTo(SX(xa,z),SY(ya,z)); else ctx.moveTo(SX(xa,z),SY(ya,z)); }
-  for(let i=n;i>=0;i--){ const z=z0+(z1-z0)*i/n; ctx.lineTo(SX(xb,z),SY(yb,z)); }
+  for(let i=0;i<=n;i++){ const z=zAt(z0,z1,i,n); if(i) ctx.lineTo(SX(xa,z),SY(ya,z)); else ctx.moveTo(SX(xa,z),SY(ya,z)); }
+  for(let i=n;i>=0;i--){ const z=zAt(z0,z1,i,n); ctx.lineTo(SX(xb,z),SY(yb,z)); }
   ctx.closePath();
 }
 function pathArch(x,y0,y1,z0,z1){
@@ -1670,7 +1672,7 @@ function drawBld(b,z0,z1){
   if(b.roof==='pitch'){
     const rh=Math.min(4.2,b.depth*0.42), xr=xi+sd*b.depth/2, rc=fac==='austro'?[170,76,54]:[132,74,58];
     ctx.fillStyle=C(rc,zm,0.95); ctx.beginPath(); pathSlope(xi-sd*0.3,h-0.15,xr,h+rh,zn,zf); ctx.fill();
-    if(fac==='austro'&&zn<75){ for(let dd=1.4;dd+1.4<b.len;dd+=3.6){ const a=z0+dd; if(a<NEAR) continue; const xd=xi+sd*1.3; faceX(xd,h+0.45,h+1.55,a,a+1.2,C(b.col,zm,0.95)); faceX(xd,h+0.65,h+1.35,a+0.2,a+1.0,C(WIN,zm)); } }
+    if(fac==='austro'&&zn<55){ for(let dd=1.4;dd+1.4<b.len;dd+=3.6){ const a=z0+dd; if(a<NEAR) continue; const xd=xi+sd*1.3; faceX(xd,h+0.45,h+1.55,a,a+1.2,C(b.col,zm,0.95)); faceX(xd,h+0.65,h+1.35,a+0.2,a+1.0,C(WIN,zm)); } }
     if(front){ ctx.fillStyle=C(b.col,z0,0.95); ctx.beginPath(); ctx.moveTo(SX(xi,z0),SY(h,z0)); ctx.lineTo(SX(xr,z0),SY(h+rh,z0)); ctx.lineTo(SX(xo,z0),SY(h,z0)); ctx.closePath(); ctx.fill();
       ctx.strokeStyle=C(rc,z0,0.8); ctx.lineWidth=Math.max(1.5,0.2*F/z0); ctx.beginPath(); ctx.moveTo(SX(xi-sd*0.3,z0),SY(h-0.15,z0)); ctx.lineTo(SX(xr,z0),SY(h+rh,z0)); ctx.lineTo(SX(xo+sd*0.3,z0),SY(h-0.15,z0)); ctx.stroke(); }
   } else {
@@ -2001,9 +2003,9 @@ function cityOverlays(){
       const S=g.st.sty, t=g.st.type;
       if(S.cobble&&(t==='street'||t==='square')){
         ctx.fillStyle=C(COBBLE,0); ctx.beginPath(); pathY(-3.4,3.4,0.0005,za,zb); ctx.fill();
-        const zc=Math.min(zb,36);
+        const zc=Math.min(zb,30);
         if(zc>za){ ctx.strokeStyle=CA([70,62,56],0.35); ctx.lineWidth=1; ctx.beginPath();
-          for(let dd=Math.ceil((za+dist-PZ)/0.6)*0.6;PZ+dd-dist<zc;dd+=0.6){ const z=PZ+dd-dist; ctx.moveTo(SX(-3.4,z),SY(0,z)); ctx.lineTo(SX(3.4,z),SY(0,z)); }
+          for(let dd=Math.ceil((za+dist-PZ)/0.7)*0.7;PZ+dd-dist<zc;dd+=0.7){ const z=PZ+dd-dist; ctx.moveTo(SX(-3.4,z),SY(0,z)); ctx.lineTo(SX(3.4,z),SY(0,z)); }
           for(let x=-3.2;x<3.4;x+=0.55) lineZ(x,0.001,za,zc);
           ctx.stroke(); }
       }
