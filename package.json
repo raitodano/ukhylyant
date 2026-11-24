@@ -1,0 +1,12 @@
+{
+  "name": "ukhylyant",
+  "private": true,
+  "description": "Build tooling for the experimental Three.js prototype (web/3d.js). The main game needs no build.",
+  "scripts": {
+    "build:3d": "esbuild src3d/main.js --bundle --format=iife --minify --target=es2019 --legal-comments=eof --outfile=web/3d.js"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "three": "0.187.0"
+  }
+}

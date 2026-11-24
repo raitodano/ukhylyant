@@ -20,6 +20,7 @@
   <img src="docs/gameplay.jpg" width="200" alt="Гра">
   <img src="docs/night.jpg" width="200" alt="Ніч">
   <img src="docs/achievements.jpg" width="200" alt="Досягнення">
+  <img src="docs/3d_lviv.jpg" width="200" alt="3D-прототип: Львів">
 </p>
 
 ## Як грати
@@ -94,6 +95,8 @@
 
 ```
 web/            гра: один файл index.html + шрифт Rubik (OFL) для офлайну
+web/3d.html     експериментальний 3D-прототип (Львів) на Three.js; web/3d.js — зібраний бандл
+src3d/          вихідний код 3D-прототипу (збирається в web/3d.js)
 android/        Android-обгортка (WebView), Gradle-проєкт
 docs/           скриншоти й іконка
 .github/        CI: збирає APK і сам випускає реліз для нової версії
@@ -110,6 +113,13 @@ cd android
 ```
 
 Гру можна запустити й у браузері: відкрий `web/index.html` або підніми локальний сервер у папці `web`.
+
+3D-прототип: після змін у `src3d/` перезбери бандл (потрібен Node.js) і закоміть `web/3d.js`:
+
+```bash
+npm install
+npm run build:3d
+```
 
 > APK підписано спільним **несекретним debug-ключем** (`android/app/debug.keystore`, паролі `android`),
 > щоб локальні й CI-збірки мали однаковий підпис і оновлювались без перевстановлення.

@@ -13,3 +13,6 @@ android/.kotlin/
 *.iml
 .vscode/
 .DS_Store
+
+# JS tooling
+node_modules/

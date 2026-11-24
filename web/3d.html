@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#1c2747">
+<title>Ухилянт 3D — прототип (Львів)</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #1c2747; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #fff; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+  #c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  .hidden { display: none !important; }
+  #hud { position: fixed; left: 0; right: 0; top: 0; padding: calc(env(safe-area-inset-top) + 10px) 12px 0; display: flex; align-items: flex-start; gap: 8px; pointer-events: none; }
+  .pill { background: rgba(0,0,0,.42); border-radius: 14px; padding: 6px 12px; font-weight: 800; font-size: 20px; text-shadow: 0 1px 2px #000; }
+  #hud .sp { flex: 1; }
+  #hud button { pointer-events: auto; }
+  button { font: inherit; border: 0; border-radius: 14px; background: rgba(0,0,0,.42); color: #fff; font-weight: 800; font-size: 18px; padding: 7px 12px; cursor: pointer; }
+  .scr { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: rgba(10,14,30,.55); text-align: center; padding: 20px; }
+  .scr h1 { margin: 0; font-size: 34px; letter-spacing: 1px; text-shadow: 0 3px 0 #c0392b, 0 5px 10px #000; }
+  .scr p { margin: 0; max-width: 420px; line-height: 1.4; opacity: .92; }
+  .tag { background: #ffd21f; color: #222; font-weight: 900; border-radius: 8px; padding: 3px 9px; font-size: 14px; }
+  .big { background: #ffd21f; color: #1b1b1b; font-size: 22px; padding: 13px 30px; box-shadow: 0 4px 0 #b38f00; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  #toast { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); font-weight: 900; font-size: 24px; text-shadow: 0 2px 0 #c0392b, 0 3px 8px #000; opacity: 0; pointer-events: none; white-space: normal; max-width: 90vw; text-align: center; }
+  #toast.show { animation: tst 1.6s ease-out; }
+  @keyframes tst { 0% { opacity: 0; transform: translateX(-50%) scale(.7); } 15% { opacity: 1; transform: translateX(-50%) scale(1.08); } 75% { opacity: 1; } 100% { opacity: 0; transform: translateX(-50%) scale(1); } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud" class="hidden">
+  <div class="pill">🏃 <span id="score">0</span> м</div>
+  <div class="pill">🪙 <span id="coinN">0</span></div>
+  <div class="sp"></div>
+  <button id="btnNight" aria-label="День / ніч">🌙</button>
+  <button id="btnPause" aria-label="Пауза">⏸</button>
+</div>
+<div id="start" class="scr">
+  <span class="tag">🧪 ЕКСПЕРИМЕНТ · Three.js</span>
+  <h1>УХИЛЯНТ 3D</h1>
+  <p>Прототип на справжньому 3D: Львів — бруківка, кам'яниці, черепиця, справжні повороти на 90°, пагорби, опера й ратуша. Свайпи як у звичайній грі.</p>
+  <div class="row"><button id="btnGo" class="big">БІГТИ ▶</button></div>
+  <div class="row"><button id="btnBack1">← Звичайна гра (2D)</button></div>
+  <p style="font-size:13px;opacity:.7">Тільки для оцінки вигляду й плавності: досягнень, скінів і збережень тут немає.</p>
+</div>
+<div id="pause" class="scr hidden">
+  <h1>ПАУЗА</h1>
+  <div class="row"><button id="btnResume" class="big">ДАЛІ ▶</button></div>
+  <div class="row"><button id="btnBack3">← Звичайна гра (2D)</button></div>
+</div>
+<div id="over" class="scr hidden">
+  <h1>СПІЙМАЛИ!</h1>
+  <p>Пробіг <b id="oScore">0</b> м · монет <b id="oCoins">0</b></p>
+  <div class="row"><button id="btnAgain" class="big">ЩЕ РАЗ ▶</button></div>
+  <div class="row"><button id="btnBack2">← Звичайна гра (2D)</button></div>
+</div>
+<div id="fail" class="scr hidden">
+  <h1>НЕМАЄ 3D</h1>
+  <p>Цей пристрій або браузер не дав WebGL, тож 3D-прототип не запуститься. Звичайна гра працює як і раніше.</p>
+  <div class="row"><a href="index.html"><button class="big">← Звичайна гра</button></a></div>
+</div>
+<div id="toast"></div>
+<script src="3d.js"></script>
+</body>
+</html>
