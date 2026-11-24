@@ -5,6 +5,12 @@
 таксофон із корешем на «копійці», дрон під обстрілом ППО та цілий набір пасхалок.
 
 <p>
+  <img src="docs/kyiv.jpg" width="200" alt="Київ">
+  <img src="docs/lviv.jpg" width="200" alt="Львів">
+  <img src="docs/odesa.jpg" width="200" alt="Одеса">
+  <img src="docs/skins.jpg" width="200" alt="Скіни">
+</p>
+<p>
   <img src="docs/menu.jpg" width="200" alt="Меню">
   <img src="docs/village.jpg" width="200" alt="Село">
   <img src="docs/drone.jpg" width="200" alt="Дрон">
@@ -13,7 +19,6 @@
 <p>
   <img src="docs/gameplay.jpg" width="200" alt="Гра">
   <img src="docs/night.jpg" width="200" alt="Ніч">
-  <img src="docs/skins.jpg" width="200" alt="Скіни">
   <img src="docs/achievements.jpg" width="200" alt="Досягнення">
 </p>
 
