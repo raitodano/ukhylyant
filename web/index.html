@@ -337,7 +337,7 @@ function nextPop(){
 // ============ view ============
 let W=1,H=1,DPR=1,K=50,F=300,HY=200,CX=100,CAMY0=6;
 let camX=0, camY=6, camLift=0;
-let skyline=[], clouds=[], stars=[], hills=[], tline=[], sunX=0, sunY=0, sunR=10;
+let skyline=[], clouds=[], stars=[], hills=[], tline=[], SKYP=820, bgPrev=0, sunX=0, sunY=0, sunR=10;
 function resize(){
   DPR=Math.min(2, window.devicePixelRatio||1);
   W=Math.max(1,window.innerWidth); H=Math.max(1,window.innerHeight);
@@ -346,12 +346,12 @@ function resize(){
   K=Math.max(18, Math.min(0.9*W/6.8, 0.078*H));
   F=K*PZ; HY=H*0.35; CX=W/2;
   CAMY0=(H*0.79-HY)/K;
-  skyline=[]; let x=-160; const sc=H/800;
-  while(x<W+160){ const w=(14+rnd()*36)*sc, tv=rnd()<0.04; skyline.push({x,w:tv?4*sc:w,h:(10+rnd()*42)*sc*(rnd()<0.12?1.8:1)*(tv?3.2:1)}); x+=(tv?4*sc:w)+rnd()*3; }
+  SKYP=Math.max(W*2,820); skyline=[]; let x=0; const sc=H/800;
+  while(x<SKYP){ const w=(14+rnd()*36)*sc, tv=rnd()<0.04; skyline.push({x,w:tv?4*sc:w,h:(10+rnd()*42)*sc*(rnd()<0.12?1.8:1)*(tv?3.2:1)}); x+=(tv?4*sc:w)+rnd()*3; }
   clouds=[]; for(let i=0;i<5;i++) clouds.push({x:rnd()*W*1.3,y:HY*(0.12+rnd()*0.5),s:(0.6+rnd()*0.8)*Math.min(W,H)/400,v:4+rnd()*6});
   stars=[]; for(let i=0;i<80;i++) stars.push({x:rnd()*W,y:rnd()*HY*0.92,r:0.5+rnd()*1.3,p:rnd()*6});
-  hills=[]; for(let x=-220;x<=W+220;x+=10){ const t=x/Math.max(W,300); hills.push(x,(14+11*Math.sin(t*5.1+1.3)+7*Math.sin(t*11.7+0.4)+4*Math.sin(t*23))*sc); }
-  tline=[]; let tx=-220; while(tx<W+220){ const r=(4+rnd()*7)*sc; tline.push({x:tx,r}); tx+=r*1.25; }
+  hills=[]; for(let x=0;x<=SKYP;x+=10){ const t=x/SKYP*6.283185307; hills.push(x,(14+11*Math.sin(t*2+1.3)+7*Math.sin(t*5+0.4)+4*Math.sin(t*11))*sc); }
+  tline=[]; let tx=0; while(tx<SKYP){ const r=(4+rnd()*7)*sc; tline.push({x:tx,r}); tx+=r*1.25; }
 }
 window.addEventListener('resize',resize);
 window.addEventListener('orientationchange',()=>setTimeout(resize,200));
@@ -395,21 +395,49 @@ function T(h){
 }
 function fadeA(z){ return z>FAR-35 ? clamp((FAR-z)/35,0,1) : 1; }
 function fogFrac(z){ return z<38?0:Math.min(0.95,(z-38)/(FAR-38)*0.95); }
-const SX=(x,z)=>CX+(x-camX)*F/z;
+// Road bends are VISUAL only: every point at depth z is shifted sideways by OX(z), the
+// lateral offset of the road centre line ahead of the runner. Gameplay stays 3 straight lanes.
+const OXT=new Float32Array(240); let curvy=false, curvesOn=true, headAcc=0;
+function OX(z){ if(!curvy) return 0; const s=z-PZ; if(s<=0) return 0; const i=s|0; if(i>=OXT.length-1) return OXT[OXT.length-1]; return OXT[i]+(OXT[i+1]-OXT[i])*(s-i); }
+function buildCurve(){
+  curvy=false; if(!curvesOn) return;
+  let h=0,x=0,mx=0; OXT[0]=0;
+  for(let i=1;i<OXT.length;i++){ h+=curveK(dist+i-0.5); x+=h; OXT[i]=x; const a=Math.abs(x); if(a>mx) mx=a; }
+  curvy=mx>0.02;
+}
+function segN(z0,z1){ return curvy?Math.max(1,Math.min(30,Math.ceil((z1-z0)/4.5))):1; }
+const SX=(x,z)=>CX+(x+OX(z)-camX)*F/z;
 const SY=(y,z)=>HY+(camY-y)*F/z;
 
 // ============ drawing primitives ============
 function quad(ax,ay,bx,by,cx,cy,dx,dy,fill){ctx.fillStyle=fill;ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(bx,by);ctx.lineTo(cx,cy);ctx.lineTo(dx,dy);ctx.closePath();ctx.fill();}
-function faceZ(x0,x1,y0,y1,z,fill){ if(z<NEAR) return; const s=F/z; const ax=CX+(x0-camX)*s, bx=CX+(x1-camX)*s, ay=HY+(camY-y1)*s, by=HY+(camY-y0)*s; ctx.fillStyle=fill; ctx.fillRect(ax,ay,bx-ax,by-ay); }
-function faceX(x,y0,y1,z0,z1,fill){ const s0=F/z0,s1=F/z1, X0=CX+(x-camX)*s0, X1=CX+(x-camX)*s1; quad(X0,HY+(camY-y0)*s0, X0,HY+(camY-y1)*s0, X1,HY+(camY-y1)*s1, X1,HY+(camY-y0)*s1, fill); }
-function pathX(x,y0,y1,z0,z1){ const s0=F/z0,s1=F/z1, X0=CX+(x-camX)*s0, X1=CX+(x-camX)*s1; ctx.moveTo(X0,HY+(camY-y0)*s0); ctx.lineTo(X0,HY+(camY-y1)*s0); ctx.lineTo(X1,HY+(camY-y1)*s1); ctx.lineTo(X1,HY+(camY-y0)*s1); ctx.closePath(); }
-function faceY(x0,x1,y,z0,z1,fill){ const s0=F/z0,s1=F/z1, Y0=HY+(camY-y)*s0, Y1=HY+(camY-y)*s1; quad(CX+(x0-camX)*s0,Y0, CX+(x1-camX)*s0,Y0, CX+(x1-camX)*s1,Y1, CX+(x0-camX)*s1,Y1, fill); }
-function pathY(x0,x1,y,z0,z1){ const s0=F/z0,s1=F/z1, Y0=HY+(camY-y)*s0, Y1=HY+(camY-y)*s1; ctx.moveTo(CX+(x0-camX)*s0,Y0); ctx.lineTo(CX+(x1-camX)*s0,Y0); ctx.lineTo(CX+(x1-camX)*s1,Y1); ctx.lineTo(CX+(x0-camX)*s1,Y1); ctx.closePath(); }
+function faceZ(x0,x1,y0,y1,z,fill){ if(z<NEAR) return; const s=F/z, o=OX(z)-camX; const ax=CX+(x0+o)*s, bx=CX+(x1+o)*s, ay=HY+(camY-y1)*s, by=HY+(camY-y0)*s; ctx.fillStyle=fill; ctx.fillRect(ax,ay,bx-ax,by-ay); }
+// long faces are subdivided along z so they follow the bend (one polygon, one fill)
+function pathX(x,y0,y1,z0,z1){
+  const n=segN(z0,z1);
+  if(n===1){ const s0=F/z0,s1=F/z1, X0=CX+(x+OX(z0)-camX)*s0, X1=CX+(x+OX(z1)-camX)*s1; ctx.moveTo(X0,HY+(camY-y0)*s0); ctx.lineTo(X0,HY+(camY-y1)*s0); ctx.lineTo(X1,HY+(camY-y1)*s1); ctx.lineTo(X1,HY+(camY-y0)*s1); ctx.closePath(); return; }
+  for(let i=0;i<=n;i++){ const z=z0+(z1-z0)*i/n, s=F/z, X=CX+(x+OX(z)-camX)*s, Y=HY+(camY-y0)*s; if(i) ctx.lineTo(X,Y); else ctx.moveTo(X,Y); }
+  for(let i=n;i>=0;i--){ const z=z0+(z1-z0)*i/n, s=F/z; ctx.lineTo(CX+(x+OX(z)-camX)*s,HY+(camY-y1)*s); }
+  ctx.closePath();
+}
+function faceX(x,y0,y1,z0,z1,fill){ ctx.fillStyle=fill; ctx.beginPath(); pathX(x,y0,y1,z0,z1); ctx.fill(); }
+function pathY(x0,x1,y,z0,z1){
+  const n=segN(z0,z1);
+  if(n===1){ const s0=F/z0,s1=F/z1, Y0=HY+(camY-y)*s0, Y1=HY+(camY-y)*s1, o0=OX(z0)-camX, o1=OX(z1)-camX; ctx.moveTo(CX+(x0+o0)*s0,Y0); ctx.lineTo(CX+(x1+o0)*s0,Y0); ctx.lineTo(CX+(x1+o1)*s1,Y1); ctx.lineTo(CX+(x0+o1)*s1,Y1); ctx.closePath(); return; }
+  for(let i=0;i<=n;i++){ const z=z0+(z1-z0)*i/n, s=F/z, X=CX+(x0+OX(z)-camX)*s, Y=HY+(camY-y)*s; if(i) ctx.lineTo(X,Y); else ctx.moveTo(X,Y); }
+  for(let i=n;i>=0;i--){ const z=z0+(z1-z0)*i/n, s=F/z; ctx.lineTo(CX+(x1+OX(z)-camX)*s,HY+(camY-y)*s); }
+  ctx.closePath();
+}
+function faceY(x0,x1,y,z0,z1,fill){ ctx.fillStyle=fill; ctx.beginPath(); pathY(x0,x1,y,z0,z1); ctx.fill(); }
+// a ground-level line along the road (follows the bend)
+function lineZ(x,y,z0,z1){ const n=segN(z0,z1); for(let i=0;i<=n;i++){ const z=z0+(z1-z0)*i/n; if(i) ctx.lineTo(SX(x,z),SY(y,z)); else ctx.moveTo(SX(x,z),SY(y,z)); } }
+// is x on the camera's right at depth z (i.e. we see its left-facing side)?
+const rightOf=(x,z)=>x+OX(z)>camX;
 function strip(x0,x1,c){ faceY(x0,x1,0,NEAR,FAR,C(c,0)); }
 function box(x0,x1,y0,y1,z0,z1,c){
   if(z1<NEAR) return; const zn=Math.max(z0,NEAR), zm=Math.min((zn+z1)/2,FAR);
-  if(camX<x0) faceX(x0,y0,y1,zn,z1,C(c,zm,0.76));
-  if(camX>x1) faceX(x1,y0,y1,zn,z1,C(c,zm,0.86));
+  if(rightOf(x0,zm)) faceX(x0,y0,y1,zn,z1,C(c,zm,0.76));
+  if(!rightOf(x1,zm)) faceX(x1,y0,y1,zn,z1,C(c,zm,0.86));
   if(camY>y1) faceY(x0,x1,y1,zn,z1,C(c,zm,1.1));
   if(z0>=NEAR) faceZ(x0,x1,y0,y1,z0,C(c,z0,0.97));
 }
@@ -545,7 +573,7 @@ function resetWorld(){
   nextCutlet=(curSkin().id==='kotleta'?150:300)+rnd()*300; nextGranny=320+rnd()*400; nextBirds=30+rnd()*60;
   nextBooth=380+rnd()*300; nextDrone=650+rnd()*500;
   nextBld=[-PZ-3-rnd()*4, -PZ-3-rnd()*4]; nextWalk=[-PZ+2,-PZ+5]; nextC=[-PZ,-PZ]; nextLamp=-PZ+1; nextPole=-PZ; nextSignB=ZFIRST; borderPlaced=false; storkSet=new Set();
-  camX=0; camLift=0; shake=0; flashT=0; seq=[]; cityK=1;
+  camX=0; camLift=0; shake=0; flashT=0; seq=[]; cityK=1; headAcc=0; buildRoute();
   generate();
 }
 // debug/test helper: continue the current run from distance d
@@ -575,6 +603,30 @@ function zoneSeg(d){
   return sg;
 }
 function zoneAt(d){ return zoneSeg(d).z; }
+// ---- route bends (deterministic per city; never Math.random at lookup time)
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+function hashStr(t){ let h=2166136261; for(let i=0;i<t.length;i++){ h^=t.charCodeAt(i); h=Math.imul(h,16777619); } return h>>>0; }
+let TURNS=[];
+function buildRoute(){
+  const R=mulberry32(hashStr((CITY?CITY.id:'kyiv')+':route')); TURNS=[];
+  let d=150, last=0; const end=borderNeed-420;
+  while(d<end){
+    const city=zoneAt(d)==='city';
+    const w=city?60+R()*40:110+R()*90;
+    let a=(city?0.32+R()*0.38:0.16+R()*0.28)*(R()<0.5?-1:1);
+    if(Math.sign(a)===last&&R()<0.7) a=-a;   // mostly S-bends, so the view never swings too far
+    TURNS.push({c:d+w/2,w,a}); last=Math.sign(a);
+    d+=w+(city?90+R()*120:120+R()*200);
+  }
+}
+// curvature (rad per metre) at route distance d: raised-cosine pulses, each turning the road by t.a
+function curveK(d){
+  let lo=0,hi=TURNS.length-1;
+  while(lo<=hi){ const m=(lo+hi)>>1, t=TURNS[m];
+    if(d<t.c-t.w/2) hi=m-1; else if(d>t.c+t.w/2) lo=m+1;
+    else { const u=(d-(t.c-t.w/2))/t.w; return t.a/t.w*(1-Math.cos(6.283185307*u)); } }
+  return 0;
+}
 function fieldKind(sg){ return ['wheat','sunflower','plowed'][(((sg.k+1)*2+sg.i+3)%3+3)%3]; }
 const isBlock=k=>k==='bus'||k==='patrol';
 function pickKind(diff,early){
@@ -1064,6 +1116,7 @@ function update(dt){
   for(const q of parts){ q.life-=dt; q.x+=q.vx*dt; q.y+=q.vy*dt; q.d+=q.vd*dt; if(!q.ng){ q.vy-=14*dt; if(q.y<0){q.y=0;q.vy*=-0.3;} } }
   for(const c of clouds){ c.x-=c.v*dt; if(c.x<-150*c.s) c.x=W+150*c.s; }
   cityK+=((zoneAt(dist+110)==='city'?1:0)-cityK)*(1-Math.exp(-dt*1.2));
+  if(state==='play'||state==='caught'||state==='win') headAcc+=(curvesOn?curveK(dist):0)*speed*dt;
   camX+=(p.x*0.6-camX)*(1-Math.exp(-dt*8));
   const lt=p.sup*0.75+Math.max(0,p.y-p.sup)*(p.y>3.2?0.8:0.22);
   camLift+=(lt-camLift)*(1-Math.exp(-dt*7));
@@ -1073,20 +1126,25 @@ function update(dt){
 }
 
 // ============ render: environment ============
+// background yaw: turning right slides the horizon left (1 rad ~ 0.9 screen widths)
+function bgOff(){ return -headAcc*W*0.9; }
+function bgWrap(){ const full=6.283185307*W*0.9; let b=((bgOff()%full)+full)%full; if(b>full/2) b-=full; return b; }
+const TILES=[0,0,0];
+function tiles(off){ const o=((off%SKYP)+SKYP)%SKYP-SKYP; TILES[0]=o; TILES[1]=o+SKYP; TILES[2]=o+2*SKYP; return TILES; }
 function drawSky(){
   const g=ctx.createLinearGradient(0,0,0,HY);
   g.addColorStop(0,rgb(SKYT)); g.addColorStop(0.7,rgb(mix3(SKYT,FOG,0.6))); g.addColorStop(1,rgb(FOG));
   ctx.fillStyle=g; ctx.fillRect(-30,-30,W+60,HY+31);
   if(NIGHT>0.05){
     for(const s of stars){ ctx.fillStyle='rgba(255,255,240,'+(NIGHT*(0.55+0.45*Math.sin(time*2+s.p))).toFixed(2)+')'; ctx.fillRect(s.x,s.y,s.r,s.r); }
-    const mx=W*0.2, my=HY*0.3, mr=Math.min(W,H)*0.045;
+    const mx=W*0.2+bgWrap(), my=HY*0.3, mr=Math.min(W,H)*0.045;
     ctx.fillStyle='rgba(255,250,225,'+(NIGHT*0.25).toFixed(2)+')'; circ(mx,my,mr*1.8);
     ctx.fillStyle='rgba(250,246,226,'+NIGHT.toFixed(2)+')'; circ(mx,my,mr);
     ctx.fillStyle='rgba(200,196,180,'+(NIGHT*0.6).toFixed(2)+')'; circ(mx-mr*0.3,my-mr*0.2,mr*0.22); circ(mx+mr*0.35,my+mr*0.25,mr*0.16);
   }
   // sun (also the secret "sun" easter egg target in the menu)
   let k; if(PHASE<0.6) k=clamp((PHASE-0.3)/0.25,0,1); else if(PHASE>0.88) k=1-clamp((PHASE-0.9)/0.1,0,1); else k=1;
-  sunX=W*0.78; sunR=Math.min(W,H)*0.06; sunY=HY*(0.28+0.8*k);
+  sunX=W*0.78+bgWrap(); sunR=Math.min(W,H)*0.06; sunY=HY*(0.28+0.8*k);
   if(sunY<HY+sunR){
     const sc=mix3([255,246,200],[255,140,60],k);
     ctx.fillStyle='rgba('+(sc[0]|0)+','+(sc[1]|0)+','+(sc[2]|0)+',0.16)'; circ(sunX,sunY,sunR*2.6);
@@ -1094,7 +1152,8 @@ function drawSky(){
     ctx.fillStyle=rgb(sc); circ(sunX,sunY,sunR);
     if(sunTaps>0&&state==='menu'){ ctx.fillStyle='#4a2a00'; circ(sunX-sunR*0.32,sunY-sunR*0.15,sunR*0.1); circ(sunX+sunR*0.32,sunY-sunR*0.15,sunR*0.1); ctx.strokeStyle='#4a2a00'; ctx.lineWidth=sunR*0.08; ctx.beginPath(); ctx.arc(sunX,sunY+sunR*0.05,sunR*0.42,0.2*Math.PI,0.8*Math.PI); ctx.stroke(); }
   }
-  // clouds with a shaded underside
+  // clouds with a shaded underside (they also swing with the heading)
+  const bgd=bgOff()-bgPrev; bgPrev=bgOff(); if(Math.abs(bgd)<W) for(const c of clouds){ c.x+=bgd; if(c.x>W+160*c.s) c.x-=W+320*c.s; if(c.x<-160*c.s) c.x+=W+320*c.s; }
   const ca=(0.85-NIGHT*0.6).toFixed(2);
   for(const c of clouds){
     const s=c.s*20;
@@ -1106,20 +1165,20 @@ function drawSky(){
   // horizon: city skyline <-> countryside hills & tree line (crossfade)
   if(cityK<0.99){
     ctx.globalAlpha=1-cityK;
-    const off=-camX*1.5; ctx.fillStyle=rgb(mix3(FOG,[86,116,104],0.32)); ctx.beginPath(); ctx.moveTo(hills[0]+off,HY+1);
-    for(let i=0;i<hills.length;i+=2) ctx.lineTo(hills[i]+off,HY-hills[i+1]);
-    ctx.lineTo(hills[hills.length-2]+off,HY+1); ctx.closePath(); ctx.fill();
-    const off2=-camX*3; ctx.fillStyle=rgb(mix3(FOG,[44,74,46],0.5)); ctx.beginPath();
-    for(const t of tline){ ctx.moveTo(t.x+off2+t.r,HY-t.r*0.35); ctx.arc(t.x+off2,HY-t.r*0.35,t.r,0,7); }
+    ctx.fillStyle=rgb(mix3(FOG,[86,116,104],0.32)); ctx.beginPath();
+    for(const off of tiles(-camX*1.5+bgOff()*0.7)){ ctx.moveTo(hills[0]+off,HY+1); for(let i=0;i<hills.length;i+=2) ctx.lineTo(hills[i]+off,HY-hills[i+1]); ctx.lineTo(hills[hills.length-2]+off,HY+1); ctx.closePath(); }
+    ctx.fill();
+    ctx.fillStyle=rgb(mix3(FOG,[44,74,46],0.5)); ctx.beginPath();
+    for(const off of tiles(-camX*3+bgOff())) for(const t of tline){ const x=t.x+off; if(x<-30||x>W+30) continue; ctx.moveTo(x+t.r,HY-t.r*0.35); ctx.arc(x,HY-t.r*0.35,t.r,0,7); }
     ctx.fill(); ctx.fillRect(-30,HY-3,W+60,4);
     ctx.globalAlpha=1;
   }
   if(cityK>0.01){
     ctx.globalAlpha=cityK;
-    const off=-camX*3; ctx.fillStyle=rgb(mix3(FOG,[60,70,90],0.22)); ctx.beginPath();
-    for(const b of skyline) ctx.rect(b.x+off,HY-b.h,b.w,b.h+2);
+    const offs=tiles(-camX*3+bgOff()); ctx.fillStyle=rgb(mix3(FOG,[60,70,90],0.22)); ctx.beginPath();
+    for(const off of offs) for(const b of skyline){ const x=b.x+off; if(x>W+40||x+b.w<-40) continue; ctx.rect(x,HY-b.h,b.w,b.h+2); }
     ctx.fill();
-    if(NIGHT>0.3){ ctx.fillStyle='rgba(255,220,140,'+(NIGHT*0.7).toFixed(2)+')'; for(let i=0;i<skyline.length;i+=3){ const b=skyline[i]; if(b.h>14) ctx.fillRect(b.x+off+b.w*0.3,HY-b.h*0.7,2,2); } }
+    if(NIGHT>0.3){ ctx.fillStyle='rgba(255,220,140,'+(NIGHT*0.7).toFixed(2)+')'; for(const off of offs) for(let i=0;i<skyline.length;i+=3){ const b=skyline[i], x=b.x+off; if(b.h>14&&x>-10&&x<W+10) ctx.fillRect(x+b.w*0.3,HY-b.h*0.7,2,2); } }
     ctx.globalAlpha=1;
   }
 }
@@ -1137,7 +1196,7 @@ function groundSeg(sg,za,zb){
   if(sg.z==='village'){ faceY(-6.4,-5.2,0,za,zb,C(DIRT,0)); faceY(5.2,6.4,0,za,zb,C(DIRT,0)); return; }
   const fk=fieldKind(sg), rc=fk==='wheat'?[160,128,54]:fk==='sunflower'?[60,100,40]:[80,58,40];
   ctx.strokeStyle=CA(rc,0.55); ctx.lineWidth=1; ctx.beginPath();
-  for(let x=5.4;x<44;x+=1.6){ for(const sx of [-x,x]){ ctx.moveTo(SX(sx,za),SY(0,za)); ctx.lineTo(SX(sx,zb),SY(0,zb)); } }
+  for(let x=5.4;x<44;x+=1.6){ for(const sx of [-x,x]) lineZ(sx,0,za,zb); }
   ctx.stroke();
 }
 function drawGround(){
@@ -1206,7 +1265,7 @@ function winsZ(b,x0,x1,z0,lit){
     for(let f=1;f<b.floors;f++){
       if(litW(b,c+40,f)!==lit) continue;
       const ya=0.95+f*2.8, yb=ya+1.35;
-      ctx.rect(CX+(xx-camX)*s,HY+(camY-yb)*s,1.1*s,1.35*s);
+      ctx.rect(CX+(xx+OX(z0)-camX)*s,HY+(camY-yb)*s,1.1*s,1.35*s);
     }
   }
 }
@@ -1462,8 +1521,8 @@ function shadowQ(x0,x1,z0,z1){ if(z1<NEAR) return; faceY(x0,x1,0.005,Math.max(z0
 function drawBar(o,z0,z1){
   const x0=o.lane*LANE-1.0, x1=x0+2.0, zn=Math.max(z0,NEAR), zm=Math.min(zn,FAR);
   shadowQ(x0-0.1,x1+0.1,z0-0.1,z1+0.25);
-  if(camX<x0) faceX(x0,0,1.0,zn,z1,C(REDC,zm,0.7));
-  if(camX>x1) faceX(x1,0,1.0,zn,z1,C(REDC,zm,0.8));
+  if(rightOf(x0,zm)) faceX(x0,0,1.0,zn,z1,C(REDC,zm,0.7));
+  if(!rightOf(x1,zm)) faceX(x1,0,1.0,zn,z1,C(REDC,zm,0.8));
   faceY(x0,x1,1.0,zn,z1,C([245,245,245],zm));
   if(z0>=NEAR){
     const s=F/z0, X0=SX(x0,z0), X1=SX(x1,z0), Y0=SY(1.0,z0), Y1=SY(0,z0);
@@ -1512,7 +1571,7 @@ function drawBus(o,z0,z1){
   const ox=o.lane*LANE, x0=ox-1.0, x1=ox+1.0, top=o.y1, zn=Math.max(z0,NEAR), zm=Math.min((zn+z1)/2,FAR);
   const BODY=o.gold?GOLDBUS:WHITE;
   shadowQ(x0-0.12,x1+0.12,z0-0.1,z1+0.3);
-  const sideX=camX<x0?x0:(camX>x1?x1:null);
+  const sideX=rightOf(x0,zm)?x0:(!rightOf(x1,zm)?x1:null);
   if(sideX!==null){
     const m=sideX===x0?0.8:0.9;
     faceX(sideX,0.12,0.4,zn,z1,C(DARK,zm));
@@ -1541,7 +1600,7 @@ function drawBus(o,z0,z1){
 function drawRamp(o,z0,z1){
   if(z1<NEAR) return;
   const ox=o.lane*LANE, x0=ox-0.95, x1=ox+0.95, zn=Math.max(z0,NEAR), hN=o.top*(zn-z0)/(z1-z0), zm=Math.min((zn+z1)/2,FAR);
-  const sideX=camX<x0?x0:(camX>x1?x1:null);
+  const sideX=rightOf(x0,zm)?x0:(!rightOf(x1,zm)?x1:null);
   if(sideX!==null){ ctx.fillStyle=C(WOOD,zm,0.6); ctx.beginPath(); ctx.moveTo(SX(sideX,zn),SY(0,zn)); ctx.lineTo(SX(sideX,zn),SY(hN,zn)); ctx.lineTo(SX(sideX,z1),SY(o.top,z1)); ctx.lineTo(SX(sideX,z1),SY(0,z1)); ctx.closePath(); ctx.fill(); }
   quad(SX(x0,zn),SY(hN,zn),SX(x1,zn),SY(hN,zn),SX(x1,z1),SY(o.top,z1),SX(x0,z1),SY(o.top,z1),C(WOOD,zm,1.05));
   ctx.strokeStyle=C(WOOD,zm,0.65); ctx.lineWidth=1; ctx.beginPath();
@@ -1930,7 +1989,7 @@ function drawWarnIcons(){
     ctx.fillStyle='#fff'; ctx.font='900 18px '+FONT; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('!',X,Y+r*0.25); }
 }
 function render(){
-  updateSky();
+  updateSky(); buildCurve();
   ctx.save();
   if(shake>0) ctx.translate((rnd()-0.5)*shake*18,(rnd()-0.5)*shake*18);
   drawSky(); drawGround(); drawWarnings();
@@ -2145,7 +2204,8 @@ requestAnimationFrame(frame);
 // debug / test hook
 window.__game={get state(){return state;},get lane(){return p.lane;},get dist(){return dist;},get score(){return score;},get coins(){return coins;},get speed(){return speed;},get obs(){return obs;},get items(){return items;},get deco(){return deco;},p,pw,chase,run,act,startGame,goMenu,save,
   setSpeedTime(t){ runTime=t; }, setPhase(v){ forcePhase=v; }, drawPortrait, warp, zoneAt,
-  get shots(){return shots;}, get ride(){return ride;}, get callT(){return callT;}, setCall(t){ callT=t; }, giveDrone(){ startDrone(); }, get borderNeed(){return borderNeed;}, get foot(){return run.foot;}};
+  get shots(){return shots;}, get ride(){return ride;}, get callT(){return callT;}, setCall(t){ callT=t; }, giveDrone(){ startDrone(); }, get borderNeed(){return borderNeed;}, get foot(){return run.foot;},
+  setCurves(v){ curvesOn=!!v; }, get turns(){return TURNS;}, curveK:d=>curveK(d)};
 })();
 </script>
 </body>
