@@ -94,3 +94,11 @@ export function busTexture() {
     g.fillStyle = '#c9ced4'; g.fillRect(0, 92, w, 6);
   }), { repeatU: false, repeatV: false });
 }
+// soft radial spot: lamp light pools on the ground, snow flakes, stars
+export function glowTexture() {
+  return tex(canvas(128, 128, (g, w, h) => {
+    const r = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
+    r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(0.35, 'rgba(255,255,255,0.55)'); r.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = r; g.fillRect(0, 0, w, h);
+  }), { repeatU: false, repeatV: false });
+}
