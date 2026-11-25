@@ -9,19 +9,20 @@ let built = 0;
 function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 export const CORNER_R = 16;
 
-export function buildRoute(seed = 1709) {
+export function buildRoute(seed = 1709, pool = ['street']) {
   const R = mulberry(seed); SEGS.length = 0;
-  let d = 0, n = 0;
-  const push = (len, type, k = 0, dir = 0) => { SEGS.push({ s: d, e: d + len, type, k, dir }); d += len; };
+  let d = 0, n = 0, kind = pool[0];
+  const push = (len, type, k = 0, dir = 0) => { SEGS.push({ s: d, e: d + len, type, k, dir, kind }); d += len; };
+  const pickKind = () => { let k; do k = pool[(R() * pool.length) | 0]; while (k === kind && pool.length > 1 && R() < 0.7); kind = k; };
   push(150, 'street');
   while (d < MAXD - 400) {
     const dir = R() < 0.5 ? -1 : 1;
     push(Math.PI / 2 * CORNER_R, 'corner', dir / CORNER_R, dir);            // a real 90° corner
     n++;
     if (n % 2 === 1) push(120, 'square');
-    push(40 + R() * 40, 'street');
+    pickKind(); push(40 + R() * 40, 'street');
     const bd = R() < 0.5 ? -1 : 1; push(70, 'bend', bd * (0.35 + R() * 0.25) / 70, bd);  // a gentle sweep
-    push(60 + R() * 60, 'street');
+    if (R() < 0.5) pickKind(); push(60 + R() * 60, 'street');
   }
   // integrate the centre line
   const corners = SEGS.filter((q) => q.type === 'corner');
