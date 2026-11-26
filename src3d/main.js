@@ -13,6 +13,7 @@ import { createEnv, TOD_NAMES, WX_NAMES, TIERS, TIER_NAMES } from './env.js';
 import { figure, animate, RUNNER, TCK, disposeFigure } from './characters.js';
 import { stripeTexture, labelTexture, busTexture, setTexQuality } from './textures.js';
 import { loadAssets } from './assets.js';
+import { loadPeople, makePerson, personAnimate, peopleTick, peopleReady } from './people.js';
 
 const $ = (id) => document.getElementById(id);
 const LANE = 2.2, BASE = 15, MAXS = 36, G = 32, JV = 11.5, SLIDE_T = 0.62, VIEW = 190, AIR_T = 2 * JV / G;
@@ -89,8 +90,16 @@ function cycleWx() { const k = Object.keys(WX_NAMES); applyEnv(null, k[(k.indexO
 env.onThunder = (d) => thunder(d);
 
 // ---------------------------------------------------------------- characters
-const runner = figure(scene, RUNNER, null, SM.shadow);
-const tck = [figure(scene, TCK, 'ТЦК', SM.shadow), figure(scene, TCK, 'ТЦК', SM.shadow)];
+let runner = null, tck = [];
+function makeChars() {
+  if (peopleReady()) { runner = makePerson(scene, 'runner', SM.shadow); tck = [makePerson(scene, 'tck', SM.shadow), makePerson(scene, 'tck', SM.shadow)]; }
+  else { runner = figure(scene, RUNNER, null, SM.shadow); tck = [figure(scene, TCK, 'ТЦК', SM.shadow), figure(scene, TCK, 'ТЦК', SM.shadow)]; }
+}
+// one entry point for both rigs: skinned people (clips) or the primitive fallback (procedural)
+function anim(g, ph, mode, t = 0, lean = 0, squash = 0) {
+  if (g.userData.person) return personAnimate(g, mode, t, lean, speed, squash, AIR_T, SLIDE_T);
+  return animate(g, ph, mode === 'chase' ? 'run' : mode === 'patrol' ? 'hands' : mode, t, lean, squash);
+}
 
 // ---------------------------------------------------------------- obstacles, coins
 const OG = { bar: new BoxGeometry(2.0, 1.0, 0.5), pole: new CylinderGeometry(0.08, 0.08, 2.75, 10), banner: new PlaneGeometry(2.0, 1.2), bus: new BoxGeometry(5.2, 2.35, 2.0), wheel: new CylinderGeometry(0.42, 0.42, 0.3, 18), coin: new CylinderGeometry(0.36, 0.36, 0.08, 24), wind: new PlaneGeometry(1.8, 1.05), plate: new PlaneGeometry(1.5, 0.42), head: new BoxGeometry(0.06, 0.22, 0.32), roofBox: new BoxGeometry(4.6, 0.12, 1.9), mirror: new BoxGeometry(0.1, 0.25, 0.12) };
@@ -109,17 +118,17 @@ function makeObstacle(o) {
     for (const s of [-1.07, 1.07]) add(OG.mirror, SM.tyre, -2.45, 2.0, s);
     for (const ax of [-1.7, 1.7]) for (const s of [-0.9, 0.9]) add(OG.wheel, SM.tyre, ax, 0.42, s).rotation.x = Math.PI / 2;
   }
-  else if (o.t === 'patrol') { o.fig = figure(scene, { ...TCK, face: true }, null, SM.shadow); return; }
+  else if (o.t === 'patrol') { o.fig = peopleReady() ? makePerson(scene, 'patrol', SM.shadow) : figure(scene, { ...TCK, face: true }, null, SM.shadow); return; }
   scene.add(g); o.mesh = g;
 }
 function placeObstacles() {
   for (const o of obs) {
     const dc = o.d + o.len / 2;
     if (o.mesh) { placeObj(o.mesh, dc, o.lane * LANE, 0); o.mesh.visible = o.d < dist + VIEW; }
-    if (o.fig) { placeObj(o.fig, dc, o.lane * LANE, 0); o.fig.rotation.y = -V.th; animate(o.fig, time * 2 + o.d, 'hands'); o.fig.userData.limbs[0].sho.rotation.x = -2.4 + Math.sin(time * 8 + o.d) * 0.5; }
+    if (o.fig) { placeObj(o.fig, dc, o.lane * LANE, 0); o.fig.rotation.y = -V.th; anim(o.fig, time * 2 + o.d, 'patrol'); if (o.fig.userData.limbs) o.fig.userData.limbs[0].sho.rotation.x = -2.4 + Math.sin(time * 8 + o.d) * 0.5; }
   }
 }
-function removeObstacle(o) { if (o.mesh) scene.remove(o.mesh); if (o.fig) { disposeFigure(o.fig); scene.remove(o.fig); } }
+function removeObstacle(o) { if (o.mesh) scene.remove(o.mesh); if (o.fig) { if (o.fig.userData.person) o.fig.userData.mixer.stopAllAction(); else disposeFigure(o.fig); scene.remove(o.fig); } }
 
 // ---------------------------------------------------------------- generator (same passable-lane rule as the 2D game)
 let nextRow = 0, lastRowEnd = 0;
@@ -191,7 +200,7 @@ function collide() {
 let camPos = null, camSnap = true, shake = 0, tckGap = 2.6;
 const camTarget = { x: 0, y: 0, z: 0 }, focus = new Vector3();
 function update(dt) {
-  time += dt;
+  time += dt; peopleTick(dt);
   if (state === 'play') {
     runTime += dt; speed = BASE + (MAXS - BASE) * (1 - Math.exp(-runTime / 110));
     prevDist = dist; dist += speed * dt; score = Math.floor(dist);
@@ -211,15 +220,15 @@ function update(dt) {
   const P = place(dist, p.x, p.y, V);
   runner.position.set(P.wx, P.wy, P.wz); runner.rotation.y = Math.PI - V.th;
   const lean = clamp((p.lane * LANE - p.x) * 0.22, -0.35, 0.35) + (p.stumble > 0 ? Math.sin(p.stumble * 20) * 0.25 : 0);
-  if (state === 'start') animate(runner, time * 2, 'idle');
-  else if (state !== 'play') animate(runner, time * 3, 'hands');
-  else if (p.slide > 0) animate(runner, p.run, 'roll', 1 - p.slide / SLIDE_T, lean);
-  else if (!p.onGround) animate(runner, p.run, p.flip ? 'flip' : 'air', p.jt / AIR_T, lean);
-  else animate(runner, p.run, 'run', 0, lean, p.land > 0 ? Math.sin((p.land / 0.16) * Math.PI) : 0);
+  if (state === 'start') anim(runner, time * 2, 'idle');
+  else if (state !== 'play') anim(runner, time * 3, 'hands');
+  else if (p.slide > 0) anim(runner, p.run, 'roll', 1 - p.slide / SLIDE_T, lean);
+  else if (!p.onGround) anim(runner, p.run, p.flip ? 'flip' : 'air', p.jt / AIR_T, lean);
+  else anim(runner, p.run, 'run', 0, lean, p.land > 0 ? Math.sin((p.land / 0.16) * Math.PI) : 0);
   runner.userData.blob.position.y = 0.03 - p.y; runner.userData.blob.scale.setScalar(1 / (1 + p.y * 0.3));
   const near = state !== 'play' || chaseT > 0;
   tckGap += ((near ? (state === 'caught' || state === 'over' ? 0.9 : 2.6) : 9) - tckGap) * (1 - Math.exp(-dt * 2.5));
-  tck.forEach((t, i) => { const Q = place(dist - tckGap - i * 0.4, p.x + (i ? 1.15 : -1.15) * (state === 'caught' || state === 'over' ? 0.55 : 1), 0, V); t.position.set(Q.wx, Q.wy, Q.wz); t.rotation.y = Math.PI - V.th; animate(t, p.run + i * 1.7, state === 'play' ? 'run' : 'idle'); t.visible = tckGap < 8; });
+  tck.forEach((t, i) => { const Q = place(dist - tckGap - i * 0.4, p.x + (i ? 1.15 : -1.15) * (state === 'caught' || state === 'over' ? 0.55 : 1), 0, V); t.position.set(Q.wx, Q.wy, Q.wz); t.rotation.y = Math.PI - V.th; anim(t, p.run + i * 1.7, state === 'play' ? 'chase' : 'patrol'); t.visible = tckGap < 8; });
   placeObstacles();
   let n = 0;
   for (const c of coinsList) { if (c.d > dist + 150 || n >= 260) continue; const Q = place(c.d, c.x, c.y, V); dummy.position.set(Q.wx, Q.wy, Q.wz); dummy.rotation.set(Math.PI / 2, 0, time * 4 + c.d); dummy.updateMatrix(); coinMesh.setMatrixAt(n++, dummy.matrix); }
@@ -347,20 +356,20 @@ env.wx = pick(['clear', 'clear', 'clear', 'rain', 'storm', 'snow', 'fog']);
 // photo assets first (decoded from the bundled packs), then the city
 $('btnGo').disabled = true; $('btnGo').textContent = 'ЗАВАНТАЖЕННЯ…';
 const t0 = performance.now();
-loadAssets((f) => { $('btnGo').textContent = 'ЗАВАНТАЖЕННЯ ' + Math.round(f * 100) + '%'; }).then((ok) => {
-  photos = ok;
+loadAssets((f) => { $('btnGo').textContent = 'ЗАВАНТАЖЕННЯ ' + Math.round(f * 100) + '%'; }).then(async (ok) => {
+  photos = ok; people = await loadPeople(); makeChars();
   loadCity(savedCity()); reset(); show('start');
   updateChunks(true);
   $('btnGo').disabled = false; $('btnGo').textContent = 'БІГТИ ▶';
   bootMs = Math.round(performance.now() - t0);
   requestAnimationFrame(loop);
 });
-let photos = false, bootMs = 0;
+let photos = false, people = false, bootMs = 0;
 // debug / test hook
 window.__g3 = {
   get state() { return state; }, get dist() { return dist; }, get lane() { return p.lane; }, get score() { return score; }, get p() { return p; }, act, start, renderer, camera, scene, env,
   frame: (d) => place(d, 0, 0, {}), get chunks() { return chunks.size; }, get obs() { return obs.length; }, get obsList() { return obs.map((o) => ({ t: o.t, lane: o.lane, d: o.d })); }, pause: pauseGame,
   setEnv(t, w) { applyEnv(t, w); }, setNight(on) { applyEnv(on ? 'night' : 'day'); }, setTier, get tier() { return env.tier; }, lockTier() { perf.locked = true; }, get perf() { return perf; },
-  city: (id) => { loadCity(id); reset(); updateChunks(true); }, get M() { return M; }, get photos() { return photos; }, get bootMs() { return bootMs; }, get cityId() { return city.id; }, cities: CITIES.map((c) => c.id),
+  city: (id) => { loadCity(id); reset(); updateChunks(true); }, get M() { return M; }, get photos() { return photos; }, get people() { return people; }, get runner() { return runner; }, get bootMs() { return bootMs; }, get cityId() { return city.id; }, cities: CITIES.map((c) => c.id),
   warp(d) { dist = prevDist = d; nextRow = d + 40; lastRowEnd = d + 6; for (const o of obs) removeObstacle(o); obs = []; coinsList = []; camPos = null; camSnap = true; updateChunks(true); }, segs: SEGS, setSpeedTime(t) { runTime = t; }
 };

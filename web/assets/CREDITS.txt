@@ -3,4 +3,8 @@ Photo assets used by the 3D mode — all CC0 1.0 (public domain), no attribution
              Concrete034, Bricks105, RoofingTiles014A, Facade018A
   Skies:     polyhaven.com — kloofendal_48d_partly_cloudy_puresky, qwantani_sunset_puresky, qwantani_night_puresky,
              kloofendal_overcast_puresky, kloofendal_28d_misty_puresky
-Rebuild: python3 tools/fetch_assets.py && python3 tools/build_assets.py (sources in tools/assets.json)
+  Characters & animations: Quaternius (quaternius.com) — Universal Base Characters (Superhero male body),
+             Universal Animation Library (Sprint, Jog, Jump, Roll, Idle, Hit, Death...), CC0. Clothes painted for this game.
+Rebuild: python3 tools/fetch_assets.py && python3 tools/build_assets.py (sources in tools/assets.json);
+         characters: python3 tools/fetch_itch.py universal-base-characters && python3 tools/fetch_itch.py universal-animation-library
+         && unzip both into .asset-cache/itch/ubc and .asset-cache/itch/ual && node tools/build_people.mjs && python3 tools/build_people.py

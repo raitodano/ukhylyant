@@ -10,7 +10,7 @@ export async function loadAssets(onProgress) {
   for (const [k, s] of Object.entries(A.skies || {})) { sky[k] = { sun: s.sun, sunCol: s.sunCol, hor: s.hor, elev: s.elev }; jobs.push(decode(s.img).then((im) => { sky[k].img = im; })); }
   let done = 0; jobs.forEach((j) => j.then(() => { done++; if (onProgress) onProgress(done / jobs.length); }));
   await Promise.all(jobs);
-  delete window.UKH_ASSETS;   // drop the base64 strings
+  delete A.materials; delete A.skies;   // drop the base64 strings (people are decoded by people.js)
   PH.mat = mat; PH.sky = sky;
   return true;
 }

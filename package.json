@@ -6,6 +6,9 @@
     "build:3d": "esbuild src3d/main.js --bundle --format=iife --minify --target=es2019 --legal-comments=eof --outfile=web/3d.js"
   },
   "devDependencies": {
+    "@gltf-transform/core": "^4.5.1",
+    "@gltf-transform/extensions": "^4.5.1",
+    "@gltf-transform/functions": "^4.5.1",
     "esbuild": "0.28.2",
     "three": "0.187.0"
   }
