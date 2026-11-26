@@ -62,7 +62,15 @@ export const VEHICLE_TYPES = {
   bus: { L: 11.5, W: 2.5, H: 3.0, wheelR: 0.5, wb: 3.4, wbF: 3.1, belt: 1.25, clear: 0.34, n: 8, round: 0.35,
     top: [[-5.75, 2.95], [-5.6, 3.0], [5.6, 3.0], [5.75, 2.9]], cabin: [-5.55, 5.7], bp: 99, busWin: true }
 };
-const cache = {};
+const cache = {}, wheelCache = {};
+function wheelGeo(type, s) {
+  const key = type + s; if (wheelCache[key]) return wheelCache[key];
+  const r = VEHICLE_TYPES[type].wheelR, gb = new GB(), I = new Matrix4(), dark = [0.012, 0.012, 0.014], rim = [0.36, 0.37, 0.39], hub = [0.05, 0.05, 0.055];
+  const add = (g, sx, sy, sz, z, c, f) => { const q = g.clone(); q.scale(sx, sy, sz); if (f) f(q); q.translate(0, 0, z); gb.geo(q, I, c); q.dispose(); };
+  add(TYRE, r, r, r * 0.75, 0, dark); add(RIM, r, r, r * 0.5, s * 0.01, rim); add(HUB, r, r, r * 0.5, s * 0.02, hub);
+  for (let k = 0; k < 5; k++) add(SPOKE, r, r, r, s * r * 0.29, hub, (q) => { q.translate(0, r * 0.35, 0); q.rotateZ(k * Math.PI * 2 / 5); });
+  return (wheelCache[key] = gb.build());
+}
 // parts in local coords: x forward, y up, z right; origin on the ground at the centre
 export function vehicleParts(type) {
   if (cache[type]) return cache[type];
@@ -79,11 +87,14 @@ export function vehicleParts(type) {
   const parts = { paint: [body.paint], glass: [body.glass], chrome: [], rubber: [], trim: [], head: [], tail: [], plate: [] };
   const put = (list, g, x, y, z, sx = 1, sy = 1, sz = 1, ry = 0) => { const q = g.clone(); q.scale(sx, sy, sz); if (ry) q.rotateY(ry); q.translate(x, y, z); list.push(q); };
   const wr = T.wheelR, wx = [T.wbF || T.wb, -T.wb], tw = T.W / 2 - 0.16;
+  parts.wheelAt = [];
+  const mark = (list, n) => { for (let i = list.length - n; i < list.length; i++) list[i].userData.wheel = true; };
   for (const x of wx) for (const s of [-1, 1]) {
-    put(parts.rubber, TYRE, x, wr, s * tw, wr, wr, wr * 0.75);
-    put(parts.chrome, RIM, x, wr, s * (tw + 0.01), wr, wr, wr * 0.5);
-    put(parts.trim, HUB, x, wr, s * (tw + 0.02), wr, wr, wr * 0.5);
-    for (let k = 0; k < 5; k++) { const q = SPOKE.clone(); q.scale(wr, wr, wr); q.translate(0, wr * 0.35, 0); q.rotateZ(k * Math.PI * 2 / 5); q.translate(x, wr, s * (tw + wr * 0.29)); parts.trim.push(q); }
+    parts.wheelAt.push({ x, y: wr, z: s * tw, s, r: wr });
+    put(parts.rubber, TYRE, x, wr, s * tw, wr, wr, wr * 0.75); mark(parts.rubber, 1);
+    put(parts.chrome, RIM, x, wr, s * (tw + 0.01), wr, wr, wr * 0.5); mark(parts.chrome, 1);
+    put(parts.trim, HUB, x, wr, s * (tw + 0.02), wr, wr, wr * 0.5); mark(parts.trim, 1);
+    for (let k = 0; k < 5; k++) { const q = SPOKE.clone(); q.scale(wr, wr, wr); q.translate(0, wr * 0.35, 0); q.rotateZ(k * Math.PI * 2 / 5); q.translate(x, wr, s * (tw + wr * 0.29)); q.userData.wheel = true; parts.trim.push(q); }
   }
   const fx = T.L / 2, hy = type === 'bus' ? 0.75 : clear + (T.belt - clear) * 0.55;
   put(parts.trim, BOX, fx - 0.12, clear + 0.12, 0, 0.16, 0.26, T.W * 0.78);         // front bumper
@@ -104,7 +115,7 @@ export function vehicleParts(type) {
 let VM = null, ENV = null;
 // vehicles get the sky map directly (stronger than the scene's ambient environment), so paint and glass show reflections
 export function setVehicleEnv(tex) { ENV = tex; if (VM) applyEnv(VM); }
-function applyEnv(V) { for (const [k, i] of [['paint', 0.55], ['glass', 0.9], ['chrome', 1.1]]) { V[k].envMap = ENV; V[k].envMapIntensity = i; V[k].needsUpdate = true; } }
+function applyEnv(V) { for (const [k, i] of [['paint', 0.55], ['glass', 0.9], ['chrome', 1.1], ['wheel', 0.8]]) { V[k].envMap = ENV; V[k].envMapIntensity = i; V[k].needsUpdate = true; } }
 export function vehicleMaterials(hq = true) {
   if (VM && VM.hq === hq) return VM;
   const P = hq ? MeshPhysicalMaterial : MeshStandardMaterial;
@@ -117,7 +128,8 @@ export function vehicleMaterials(hq = true) {
     trim: new MeshStandardMaterial({ color: '#202124', roughness: 0.55, metalness: 0.1 }),
     head: new MeshStandardMaterial({ color: '#e9eef2', emissive: '#fff4d6', emissiveIntensity: 0.15, metalness: 0.3, roughness: 0.1 }),
     tail: new MeshStandardMaterial({ color: '#7a0f12', emissive: '#ff2a1a', emissiveIntensity: 0.15, roughness: 0.25 }),
-    plate: new MeshStandardMaterial({ map: plateAtlas(), roughness: 0.5 })
+    plate: new MeshStandardMaterial({ map: plateAtlas(), roughness: 0.5 }),
+    wheel: new MeshStandardMaterial({ vertexColors: true, metalness: 0.6, roughness: 0.4 })
   };
   if (ENV) applyEnv(VM);
   return VM;
@@ -145,21 +157,27 @@ export const CAR_COLORS = ['#c9cdd2', '#1d1f24', '#f0f0ec', '#7d0f14', '#1e3a6e'
 export const BUS_COLORS = { kyiv: '#1f5ea8', kharkiv: '#d7b52c', lviv: '#2f7b3d', odesa: '#e8e6df', dnipro: '#c63a2a' };
 // a standalone vehicle (obstacles): one mesh per material, geometry cached per type + colour
 const meshCache = {};
-export function vehicleMesh(type, color, hq = true) {
-  const key = type + color, M = vehicleMaterials(hq);
+// a standalone vehicle (obstacles, traffic): one mesh per material; with spin=true the wheels are separate meshes
+// listed in group.userData.wheels so they can roll (rotation.z -= distance / radius)
+export function vehicleMesh(type, color, hq = true, spin = false) {
+  const key = type + color + (spin ? 'S' : ''), M = vehicleMaterials(hq);
   if (!meshCache[key]) {
-    const parts = vehicleParts(type), I = new Matrix4(), out = {}, c = [0, 0, 0];
-    const cc = { r: 0, g: 0, b: 0 }; { const t = document.createElement('canvas').getContext('2d'); }
+    const parts = vehicleParts(type), I = new Matrix4(), out = {};
     const hex = color.replace('#', ''), lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
     const pc = [lin(parseInt(hex.slice(0, 2), 16)), lin(parseInt(hex.slice(2, 4), 16)), lin(parseInt(hex.slice(4, 6), 16))];
     for (const [k, list] of Object.entries(parts)) {
+      if (k === 'wheelAt') continue;
       const gb = new GB();
-      list.forEach((g, i) => { if (k === 'plate') { const q = plateUV(g.clone(), (Math.random() * 8) | 0); gb.geo(q, I, [1, 1, 1]); q.dispose(); } else gb.geo(g, I, k === 'paint' ? pc : [1, 1, 1]); });
+      list.forEach((g) => { if (spin && g.userData.wheel) return; if (k === 'plate') { const q = plateUV(g.clone(), (Math.random() * 8) | 0); gb.geo(q, I, [1, 1, 1]); q.dispose(); } else gb.geo(g, I, k === 'paint' ? pc : [1, 1, 1]); });
       out[k] = gb.build();
     }
     meshCache[key] = out;
   }
-  const g = new Group();
+  const g = new Group(), wheels = [];
   for (const [k, geo] of Object.entries(meshCache[key])) { if (!geo) continue; const m = new Mesh(geo, M[k]); m.castShadow = k !== 'glass' && k !== 'head' && k !== 'tail' && k !== 'plate'; m.receiveShadow = k === 'paint'; g.add(m); }
+  if (spin) for (const w of vehicleParts(type).wheelAt) { const m = new Mesh(wheelGeo(type, w.s), M.wheel); m.position.set(w.x, w.y, w.z); m.castShadow = true; g.add(m); wheels.push({ mesh: m, r: w.r }); }
+  g.userData.wheels = wheels;
   return g;
 }
+// roll the wheels of a vehicle that moved `d` metres forward
+export function rollWheels(g, d) { for (const w of g.userData.wheels || []) w.mesh.rotation.z -= d / w.r; }

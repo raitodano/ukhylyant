@@ -10,8 +10,8 @@ android {
         applicationId 'ua.ukhylyant.game'
         minSdk 24
         targetSdk 34
-        versionCode 13
-        versionName '4.4'
+        versionCode 14
+        versionName '4.5'
     }
 
     // Shared, NON-SECRET debug key (standard "android" passwords) so that local and CI

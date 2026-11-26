@@ -166,7 +166,7 @@ export function makeWorld(scene, city, M, seed) {
   // realistic vehicles: cached lofted bodies merged into this chunk's buffers (paint colour as vertex colour)
   function vehicle(G, F, x, z, type, color, rot, r) {
     const parts = vehicleParts(type), m = frameMatrix(F, x, 0, z, rot), c = col(color);
-    for (const [k, list] of Object.entries(parts)) for (const g of list) {
+    for (const [k, list] of Object.entries(parts)) if (k !== 'wheelAt') for (const g of list) {
       if (k === 'plate') { const q = plateUV(g.clone(), (r() * 8) | 0); G.vplate.geo(q, m, [1, 1, 1]); q.dispose(); continue; }
       G['v' + k].geo(g, m, k === 'paint' ? c : k === 'glass' && type === 'bus' ? [0.8, 0.85, 0.9] : [1, 1, 1]);
     }
