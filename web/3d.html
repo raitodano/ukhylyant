@@ -19,7 +19,7 @@
   .scr p { margin: 0; max-width: 420px; line-height: 1.4; opacity: .92; }
   .tag { background: #ffd21f; color: #222; font-weight: 900; border-radius: 8px; padding: 3px 9px; font-size: 14px; }
   .big { background: #ffd21f; color: #1b1b1b; font-size: 22px; padding: 13px 30px; box-shadow: 0 4px 0 #b38f00; }
-  #cities { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; max-width: 460px; max-height: 30vh; overflow-y: auto; touch-action: pan-y; }
+  #cities, #skins { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; max-width: 460px; max-height: 30vh; overflow-y: auto; touch-action: pan-y; }
   .chip { font-size: 14px; padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,.14); }
   .chip.on { background: #ffd21f; color: #1b1b1b; }
   .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
@@ -44,19 +44,24 @@
   <h1>УХИЛЯНТ 3D</h1>
   <p>📍 <b id="cityName">Львів</b> — обери місто:</p>
   <div id="cities"></div>
+  <p style="font-size:14px">👕 Скін <span id="skinNote" style="opacity:.7"></span></p>
+  <div id="skins" class="chips"></div>
   <p style="font-size:14px">Свайпи: ← → смуга, ↑ стрибок (кожен третій — сальто), ↓ перекат. Угорі: ⚙️ якість графіки, погода й час доби.</p>
   <div class="row"><button id="btnGo" class="big">БІГТИ ▶</button></div>
   <div class="row"><button id="btnBack1">← Звичайна гра (2D)</button></div>
-  <p style="font-size:13px;opacity:.7">Експериментальний режим: досягнень, скінів і бонусів тут поки немає.</p>
+  <p style="font-size:13px;opacity:.7">Монети, рекорд, скіни й досягнення спільні зі звичайною грою.</p>
 </div>
 <div id="pause" class="scr hidden">
   <h1>ПАУЗА</h1>
+  <p id="pFps" style="font-size:14px;opacity:.85"></p>
   <div class="row"><button id="btnResume" class="big">ДАЛІ ▶</button></div>
   <div class="row"><button id="btnBack3">← Звичайна гра (2D)</button></div>
 </div>
 <div id="over" class="scr hidden">
   <h1>СПІЙМАЛИ!</h1>
   <p><b id="oCity"></b>: пробіг <b id="oScore">0</b> м · монет <b id="oCoins">0</b></p>
+  <p id="oBest"></p>
+  <div id="oAch" style="line-height:1.6"></div>
   <p id="oPerf" style="font-size:13px;opacity:.75"></p>
   <div class="row"><button id="btnAgain" class="big">ЩЕ РАЗ ▶</button></div>
   <div class="row"><button id="btnMenu">🏙️ Інше місто</button></div>

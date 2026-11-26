@@ -13,6 +13,8 @@ import { createEnv, TOD_NAMES, WX_NAMES, TIERS, TIER_NAMES } from './env.js';
 import { figure, animate, RUNNER, TCK, disposeFigure } from './characters.js';
 import { stripeTexture, labelTexture, busTexture, setTexQuality } from './textures.js';
 import { loadAssets } from './assets.js';
+import { SKINS, SKINM } from './skins.js';
+import { readSave, recordRun, setSkin } from './progress.js';
 import { vehicleMesh, setVehicleEnv, rollWheels, CAR_COLORS } from './vehicles.js';
 import { loadPeople, makePerson, personAnimate, peopleTick, peopleReady } from './people.js';
 
@@ -93,9 +95,29 @@ env.onThunder = (d) => thunder(d);
 
 // ---------------------------------------------------------------- characters
 let runner = null, tck = [];
+let skinId = 'ukh';
+const unlocked = (k, sv) => !k.ach || !!(sv.ach && sv.ach[k.ach]);
+function pickSkin() { const sv = readSave(), k = SKINM[sv.skin]; skinId = k && unlocked(k, sv) ? k.id : 'ukh'; }
+function makeRunner() {
+  if (runner) { if (runner.userData.mixer) runner.userData.mixer.stopAllAction(); scene.remove(runner); }
+  runner = peopleReady() ? makePerson(scene, 'runner', SM.shadow, SKINM[skinId]) : figure(scene, RUNNER, null, SM.shadow);
+}
 function makeChars() {
-  if (peopleReady()) { runner = makePerson(scene, 'runner', SM.shadow); tck = [makePerson(scene, 'tck', SM.shadow), makePerson(scene, 'tck', SM.shadow)]; }
-  else { runner = figure(scene, RUNNER, null, SM.shadow); tck = [figure(scene, TCK, 'ТЦК', SM.shadow), figure(scene, TCK, 'ТЦК', SM.shadow)]; }
+  pickSkin(); makeRunner();
+  if (peopleReady()) tck = [makePerson(scene, 'tck', SM.shadow), makePerson(scene, 'tck', SM.shadow)];
+  else tck = [figure(scene, TCK, 'ТЦК', SM.shadow), figure(scene, TCK, 'ТЦК', SM.shadow)];
+  renderSkins();
+}
+function renderSkins() {
+  const box = $('skins'); if (!box) return;
+  const sv = readSave(); box.innerHTML = ''; let locked = 0;
+  for (const k of SKINS) {
+    if (!unlocked(k, sv)) { locked++; continue; }
+    const b = document.createElement('button'); b.className = 'chip' + (k.id === skinId ? ' on' : ''); b.textContent = k.n;
+    b.addEventListener('click', (e) => { e.stopPropagation(); skinId = k.id; setSkin(k.id); makeRunner(); renderSkins(); });
+    box.appendChild(b);
+  }
+  $('skinNote').textContent = locked ? `ще ${locked} скінів відкриваються досягненнями` : 'усі скіни відкрито!';
 }
 // one entry point for both rigs: skinned people (clips) or the primitive fallback (procedural)
 function anim(g, ph, mode, t = 0, lean = 0, squash = 0) {
@@ -172,11 +194,11 @@ function genRow() {
 
 // ---------------------------------------------------------------- game state
 let dist = 0, prevDist = 0, speed = 0, runTime = 0, score = 0, coins = 0, time = 0, chaseT = 0, caughtT = 0;
-const p = { lane: 0, prevLane: 0, x: 0, prevX: 0, y: 0, vy: 0, onGround: true, slide: 0, run: 0, inv: 0, stumble: 0, jt: 0, flip: false, jumps: 0, land: 0 };
+const p = { lane: 0, prevLane: 0, x: 0, prevX: 0, y: 0, vy: 0, onGround: true, slide: 0, run: 0, inv: 0, stumble: 0, jt: 0, flip: false, jumps: 0, land: 0, slides: 0 };
 function reset() {
   for (const o of obs) removeObstacle(o); obs = []; coinsList = [];
   dist = prevDist = 0; speed = 0; runTime = 0; score = 0; coins = 0; chaseT = 3; caughtT = 0;
-  Object.assign(p, { lane: 0, prevLane: 0, x: 0, prevX: 0, y: 0, vy: 0, onGround: true, slide: 0, run: 0, inv: 0, stumble: 0, jt: 0, flip: false, jumps: 0, land: 0 });
+  Object.assign(p, { lane: 0, prevLane: 0, x: 0, prevX: 0, y: 0, vy: 0, onGround: true, slide: 0, run: 0, inv: 0, stumble: 0, jt: 0, flip: false, jumps: 0, land: 0, slides: 0 });
   nextRow = 60; lastRowEnd = 6; reserved = []; clearAmb();
   for (const [, g] of chunks) world.disposeChunk(g); chunks.clear();
   camPos = null; camSnap = true;
@@ -185,7 +207,7 @@ function act(a) {
   if (state !== 'play') return;
   if (a === 'left' || a === 'right') { const nl = clamp(p.lane + (a === 'left' ? -1 : 1), -1, 1); if (nl !== p.lane) { p.prevLane = p.lane; p.lane = nl; beep(500, 0.05, 0.03); } }
   else if (a === 'up' && p.onGround) { p.vy = JV; p.onGround = false; p.slide = 0; p.jt = 0; p.jumps++; p.flip = p.jumps % 3 === 0; beep(320, 0.18, 0.06, 760); }   // every third jump is a front flip
-  else if (a === 'down') { if (p.onGround) { if (p.slide <= 0) beep(180, 0.15, 0.04, 90); p.slide = SLIDE_T; } else p.vy = Math.min(p.vy, -24); }
+  else if (a === 'down') { if (p.onGround) { if (p.slide <= 0) { beep(180, 0.15, 0.04, 90); p.slides++; } p.slide = SLIDE_T; } else p.vy = Math.min(p.vy, -24); }
 }
 function stumble() {
   beep(140, 0.3, 0.15, 45); vib(80);
@@ -313,13 +335,16 @@ function thunder(delay) {
 function vib(ms) { try { if (window.AndroidBridge && window.AndroidBridge.vibrate) window.AndroidBridge.vibrate(ms); else if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
 function toast(t) { const e = $('toast'); e.textContent = t; e.classList.remove('show'); void e.offsetWidth; e.classList.add('show'); }
 function show(id) { for (const s of ['start', 'pause', 'over']) $(s).classList.toggle('hidden', s !== id); $('hud').classList.toggle('hidden', id !== null && id !== 'pause'); }
-function start() { initAudio(); reset(); updateChunks(true); state = 'play'; show(null); applyEnv(); toast(city.n + ': БІЖИ!'); perf.reset(); }
-function pauseGame() { if (state === 'play') { state = 'pause'; show('pause'); rainSound(0); } }
+function start() { initAudio(); reset(); updateChunks(true); state = 'play'; show(null); applyEnv(); toast(SKINM[skinId].say); perf.reset(); }
+function pauseGame() { if (state === 'play') { state = 'pause'; show('pause'); rainSound(0); $('pFps').textContent = `Графіка: ${TIER_NAMES[env.tier]} · зараз ${Math.round(fpsNow)} кадр/с`; } }
 function resume() { if (state === 'pause') { initAudio(); state = 'play'; show(null); applyEnv(); perf.reset(); } }
 function gameOver() {
   state = 'over'; $('oScore').textContent = score; $('oCoins').textContent = coins; $('oCity').textContent = city.n;
+  const res = recordRun({ dist: score, coins, jumps: p.jumps, slides: p.slides, caught: true, night: env.tod === 'night' });
+  $('oBest').textContent = res.newRecord ? `🏆 Новий рекорд! Гривні: ${res.bank}` : `Рекорд: ${res.best} м · Гривні: ${res.bank}`;
+  $('oAch').innerHTML = res.unlocked.map(([e, n, id]) => { const k = SKINS.find((q) => q.ach === id); return `<div>${e} <b>${n}</b>${k ? ` · новий скін: ${k.n}` : ''}</div>`; }).join('');
   $('oPerf').textContent = `Графіка: ${TIER_NAMES[env.tier]} · ${perf.avg ? Math.round(perf.avg) : '—'} кадр/с`;
-  show('over'); rainSound(0);
+  show('over'); rainSound(0); renderSkins();
 }
 function to2D() { location.href = 'index.html'; }
 function renderCities() {
@@ -381,12 +406,12 @@ function resize() {
   env.resize();
 }
 window.addEventListener('resize', resize);
-let last = performance.now(), lastHud = -1;
+let last = performance.now(), lastHud = -1, fpsNow = 60;
 function loop(now) {
   const rawDt = (now - last) / 1000; last = now; const dt = clamp(rawDt, 0, 0.05);
   if (state !== 'pause' && state !== 'dead') update(dt);
   if (state !== 'dead') env.render();
-  watchQuality(rawDt);
+  watchQuality(rawDt); if (rawDt > 0 && rawDt < 0.5) fpsNow += (1 / rawDt - fpsNow) * 0.05;
   if (score !== lastHud) { $('score').textContent = score; lastHud = score; }
   $('coinN').textContent = coins;
   requestAnimationFrame(loop);
@@ -413,6 +438,6 @@ window.__g3 = {
   get state() { return state; }, get dist() { return dist; }, get lane() { return p.lane; }, get score() { return score; }, get p() { return p; }, act, start, renderer, camera, scene, env, vehicleMesh,
   frame: (d) => place(d, 0, 0, {}), get chunks() { return chunks.size; }, get obs() { return obs.length; }, get obsList() { return obs.map((o) => ({ t: o.t, lane: o.lane, d: o.d, v: o.v || 0, wz: o.veh && o.veh.userData.wheels.length ? o.veh.userData.wheels[0].mesh.rotation.z : null })); }, get amb() { return amb.length; }, pause: pauseGame,
   setEnv(t, w) { applyEnv(t, w); }, setNight(on) { applyEnv(on ? 'night' : 'day'); }, setTier, get tier() { return env.tier; }, lockTier() { perf.locked = true; }, get perf() { return perf; },
-  city: (id) => { loadCity(id); reset(); updateChunks(true); }, get M() { return M; }, get photos() { return photos; }, get people() { return people; }, get runner() { return runner; }, get bootMs() { return bootMs; }, get cityId() { return city.id; }, cities: CITIES.map((c) => c.id),
+  city: (id) => { loadCity(id); reset(); updateChunks(true); }, get M() { return M; }, get photos() { return photos; }, setSkinId(id) { skinId = id; makeRunner(); }, get skinId() { return skinId; }, get people() { return people; }, get runner() { return runner; }, get bootMs() { return bootMs; }, get cityId() { return city.id; }, cities: CITIES.map((c) => c.id),
   warp(d) { dist = prevDist = d; nextRow = d + 40; lastRowEnd = d + 6; reserved = []; clearAmb(); for (const o of obs) removeObstacle(o); obs = []; coinsList = []; camPos = null; camSnap = true; updateChunks(true); }, segs: SEGS, setSpeedTime(t) { runTime = t; }
 };
