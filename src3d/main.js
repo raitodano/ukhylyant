@@ -5,7 +5,7 @@ import {
   MeshStandardMaterial, MeshBasicMaterial, BoxGeometry, CylinderGeometry, PlaneGeometry, DoubleSide
 } from 'three';
 import { buildRoute, place, SEGS } from './world.js';
-import { GB } from './geo.js';
+import { GB, makeFrame, L as LF } from './geo.js';
 import { CITIES, CITYM, hashStr } from './cities.js';
 import { cityMaterials, disposeMaterials, applyMatEnv, makeWorld, CH } from './buildings.js';
 import { skyline } from './landmarks.js';
@@ -13,7 +13,7 @@ import { createEnv, TOD_NAMES, WX_NAMES, TIERS, TIER_NAMES } from './env.js';
 import { figure, animate, RUNNER, TCK, disposeFigure } from './characters.js';
 import { stripeTexture, labelTexture, busTexture, setTexQuality } from './textures.js';
 import { loadAssets } from './assets.js';
-import { vehicleMesh, setVehicleEnv } from './vehicles.js';
+import { vehicleMesh, setVehicleEnv, CAR_COLORS } from './vehicles.js';
 import { loadPeople, makePerson, personAnimate, peopleTick, peopleReady } from './people.js';
 
 const $ = (id) => document.getElementById(id);
@@ -117,6 +117,7 @@ function makeObstacle(o) {
     const v = vehicleMesh('van', '#f1f1ee', texQ === 1); v.rotation.y = Math.PI; g.add(v);
     for (const s of [-1, 1]) { const l = add(OG.plate, SM.busPlate, 0.2, 1.55, s * 1.0); l.rotation.y = s > 0 ? 0 : Math.PI; l.scale.set(1.6, 1.6, 1); }
   }
+  else if (o.t === 'car') { const v = vehicleMesh(o.vt, o.color, texQ === 1); v.rotation.y = Math.PI; g.add(v); }   // oncoming car: front towards the runner
   else if (o.t === 'patrol') { o.fig = peopleReady() ? makePerson(scene, 'patrol', SM.shadow) : figure(scene, { ...TCK, face: true }, null, SM.shadow); return; }
   scene.add(g); o.mesh = g;
 }
@@ -130,7 +131,7 @@ function placeObstacles() {
 function removeObstacle(o) { if (o.mesh) scene.remove(o.mesh); if (o.fig) { if (o.fig.userData.person) o.fig.userData.mixer.stopAllAction(); else disposeFigure(o.fig); scene.remove(o.fig); } }
 
 // ---------------------------------------------------------------- generator (same passable-lane rule as the 2D game)
-let nextRow = 0, lastRowEnd = 0;
+let nextRow = 0, lastRowEnd = 0, reserved = [];
 const isBlock = (k) => k === 'bus' || k === 'patrol';
 function inCornerZone(d) { return SEGS.some((q) => q.type === 'corner' && d > q.s - 16 && d < q.e + 12); }
 function genRow() {
@@ -139,11 +140,16 @@ function genRow() {
   if (cz) { nextRow = cz.e + 12; lastRowEnd = Math.max(lastRowEnd, cz.e + 4); return; }   // corners stay clear
   const diff = Math.min(1, d / 3000), early = d < 180, r = rnd();
   const n = early ? 1 : (r < 0.42 - 0.22 * diff ? 1 : (r < 0.88 - 0.08 * diff ? 2 : 3));
-  const lanes = [-1, 0, 1].sort(() => rnd() - 0.5).slice(0, n), kinds = {};
-  for (const l of lanes) { const q = rnd(); kinds[l] = early ? (q < 0.4 ? 'bar' : q < 0.7 ? 'gate' : 'bus') : (q < 0.3 ? 'bar' : q < 0.55 ? 'gate' : q < 0.83 ? 'bus' : 'patrol'); }
+  reserved = reserved.filter((r) => r.to > dist - 10);
+  const busy = (l) => reserved.some((r) => r.lane === l && d > r.from - 6 && d < r.to + 8);   // an oncoming car drives through this lane
+  const free = [-1, 0, 1].filter((l) => !busy(l));
+  if (!free.length) { nextRow = d + 8; return; }
+  const lanes = free.sort(() => rnd() - 0.5).slice(0, Math.min(n, free.length === 3 ? 3 : free.length)), kinds = {};
+  for (const l of lanes) { const q = rnd(); kinds[l] = early ? (q < 0.4 ? 'bar' : q < 0.7 ? 'gate' : 'bus') : (q < 0.26 ? 'bar' : q < 0.48 ? 'gate' : q < 0.7 ? 'bus' : q < 0.86 && d > 260 ? 'car' : 'patrol'); }
+  if (lanes.length < 3 && [-1, 0, 1].filter((l) => !lanes.includes(l)).every((l) => busy(l)) && lanes.every((l) => isBlock(kinds[l]))) kinds[lanes[0]] = 'bar';   // keep a way through
   if (n === 3) { const bl = lanes.filter((l) => isBlock(kinds[l])); if (bl.length === 3) kinds[pick(bl)] = rnd() < 0.5 ? 'bar' : 'gate'; }
   const pass = [-1, 0, 1].filter((l) => !kinds[l] || !isBlock(kinds[l]));
-  const s = lastRowEnd + 3, e = d - 3, pl = pick(pass);
+  const pass2 = pass.filter((l) => !busy(l)), s = lastRowEnd + 3, e = d - 3, pl = pick(pass2.length ? pass2 : pass);
   if (e - s > 4 && rnd() < 0.85) for (let c = Math.max(s, e - 30); c <= e; c += 2.2) if (!inCornerZone(c)) coinsList.push({ d: c, x: pl * LANE, y: 0.9, got: false });
   let len = 0.6;
   for (const l of lanes) {
@@ -151,8 +157,13 @@ function genRow() {
     if (k === 'gate') Object.assign(o, { len: 0.35, y0: 1.25, y1: 2.6 });
     if (k === 'bus') Object.assign(o, { len: 5.2, y1: 2.7 });
     if (k === 'patrol') Object.assign(o, { len: 0.6, y1: 2.3, hx: 0.55 });
+    if (k === 'car') {   // drives towards the runner and arrives at this row about when the runner does; low enough to jump over
+      const v = 8 + rnd() * 6, T = Math.max(1, (d - dist) / Math.max(speed, BASE)), start = d + v * T;
+      Object.assign(o, { len: 4.6, y1: 1.5, hx: 0.95, v, vt: pick(['sedan', 'sedan', 'hatch', 'suv']), color: pick(CAR_COLORS), d: start, meet: d });
+      reserved.push({ lane: l, from: d, to: start + 5 });
+    }
     if (k === 'bar' && rnd() < 0.45) for (let i = -3; i <= 3; i++) coinsList.push({ d: d + 0.25 + i * 1.5, x: l * LANE, y: 0.9 + 1.4 * (1 - (i / 3.5) ** 2), got: false });
-    makeObstacle(o); obs.push(o); len = Math.max(len, o.len);
+    makeObstacle(o); obs.push(o); len = Math.max(len, k === 'car' ? 0.6 : o.len);
   }
   lastRowEnd = d + len;
   const sp = Math.max(speed, BASE) + 1;
@@ -166,7 +177,7 @@ function reset() {
   for (const o of obs) removeObstacle(o); obs = []; coinsList = [];
   dist = prevDist = 0; speed = 0; runTime = 0; score = 0; coins = 0; chaseT = 3; caughtT = 0;
   Object.assign(p, { lane: 0, prevLane: 0, x: 0, prevX: 0, y: 0, vy: 0, onGround: true, slide: 0, run: 0, inv: 0, stumble: 0, jt: 0, flip: false, jumps: 0, land: 0 });
-  nextRow = 60; lastRowEnd = 6;
+  nextRow = 60; lastRowEnd = 6; reserved = []; clearAmb();
   for (const [, g] of chunks) world.disposeChunk(g); chunks.clear();
   camPos = null; camSnap = true;
 }
@@ -186,7 +197,7 @@ function collide() {
   if (p.inv > 0) return;
   const h = p.slide > 0 ? 0.8 : 1.75;
   for (const o of obs) {
-    const a = o.d, b = o.d + o.len;
+    const a = o.d, b = o.d + o.len + (o.pd != null ? o.pd - o.d : 0);   // a moving car sweeps the distance it drove this frame
     if (dist + 0.35 < a || prevDist - 0.35 > b) continue;
     const ox = o.lane * LANE, reach = o.hx + 0.38;
     if (Math.abs(p.x - ox) >= reach) continue;
@@ -196,6 +207,34 @@ function collide() {
     return;
   }
 }
+// ---------------------------------------------------------------- background traffic on the side streets at junctions
+let amb = [];
+const ambTimers = new Map();
+function clearAmb() { for (const a of amb) scene.remove(a.mesh); amb = []; ambTimers.clear(); }
+function updateAmb(dt) {
+  for (const q of SEGS) {
+    if (q.type !== 'corner') continue;
+    if (q.s > dist + 170) break;
+    if (q.s < dist - 25) continue;
+    let tm = ambTimers.get(q.s); if (tm == null) { tm = rnd() * 1.5; }
+    tm -= dt;
+    if (tm <= 0 && amb.filter((a) => a.q === q).length < 5) {
+      const P = place(q.s, 0, 0, {}), F = makeFrame(P.wx, P.wy, P.wz, P.th), away = rnd() < 0.5;
+      const color = pick(CAR_COLORS), vt = pick(['sedan', 'sedan', 'hatch', 'suv', 'van']), mesh = vehicleMesh(vt, vt === 'van' ? '#eeeeea' : color, texQ === 1);
+      const a = { q, F, mesh, away, z: away ? 1.7 : -1.7, x: away ? 11 : 75, v: 9 + rnd() * 5, stopAt: 17 + amb.filter((b) => b.q === q && !b.away).length * 6 };
+      scene.add(mesh); amb.push(a); tm = 1.6 + rnd() * 3;
+    }
+    ambTimers.set(q.s, tm);
+  }
+  amb = amb.filter((a) => {
+    if (a.away) a.x += a.v * dt; else a.x = Math.max(a.stopAt, a.x - a.v * dt);
+    const done = a.x > 95 || a.q.e < dist - 30;
+    if (done) { scene.remove(a.mesh); return false; }
+    const W = LF(a.F, a.x, 0.02, a.z); a.mesh.position.set(W[0], W[1], W[2]);
+    a.mesh.rotation.y = Math.PI / 2 - Math.atan2(a.F.fx, -a.F.fz) + (a.away ? 0 : Math.PI);
+    return true;
+  });
+}
 let camPos = null, camSnap = true, shake = 0, tckGap = 2.6;
 const camTarget = { x: 0, y: 0, z: 0 }, focus = new Vector3();
 function update(dt) {
@@ -203,6 +242,10 @@ function update(dt) {
   if (state === 'play') {
     runTime += dt; speed = BASE + (MAXS - BASE) * (1 - Math.exp(-runTime / 110));
     prevDist = dist; dist += speed * dt; score = Math.floor(dist);
+    for (const o of obs) if (o.v) {   // oncoming cars
+      o.pd = o.d; o.d -= o.v * dt;
+      if (!o.honked && o.d - dist < 30 && o.d > dist && Math.abs(p.x - o.lane * LANE) < 1.2) { o.honked = true; beep(392, 0.22, 0.07, 370); beep(330, 0.3, 0.07, 311, 0.24); vib(30); }
+    }
     if (chaseT > 0) chaseT -= dt; if (p.inv > 0) p.inv -= dt; if (p.stumble > 0) p.stumble -= dt; if (p.land > 0) p.land -= dt;
     p.prevX = p.x; const tx = p.lane * LANE; p.x += (tx - p.x) * (1 - Math.exp(-dt * 16));
     if (!p.onGround || p.vy > 0) { p.jt += dt; p.vy -= G * dt; p.y += p.vy * dt; if (p.y <= 0) { p.y = 0; p.vy = 0; p.onGround = true; p.land = 0.16; shake = 0.12; } }
@@ -215,6 +258,7 @@ function update(dt) {
     coinsList = coinsList.filter((c) => !c.got && c.d > dist - 8);
   } else if (state === 'caught') { caughtT += dt; if (caughtT > 1.5) gameOver(); }
   updateChunks();
+  if (state === 'play' || state === 'start') updateAmb(state === 'play' ? dt : 0);
   // characters
   const P = place(dist, p.x, p.y, V);
   runner.position.set(P.wx, P.wy, P.wz); runner.rotation.y = Math.PI - V.th;
@@ -367,8 +411,8 @@ let photos = false, people = false, bootMs = 0;
 // debug / test hook
 window.__g3 = {
   get state() { return state; }, get dist() { return dist; }, get lane() { return p.lane; }, get score() { return score; }, get p() { return p; }, act, start, renderer, camera, scene, env, vehicleMesh,
-  frame: (d) => place(d, 0, 0, {}), get chunks() { return chunks.size; }, get obs() { return obs.length; }, get obsList() { return obs.map((o) => ({ t: o.t, lane: o.lane, d: o.d })); }, pause: pauseGame,
+  frame: (d) => place(d, 0, 0, {}), get chunks() { return chunks.size; }, get obs() { return obs.length; }, get obsList() { return obs.map((o) => ({ t: o.t, lane: o.lane, d: o.d, v: o.v || 0 })); }, get amb() { return amb.length; }, pause: pauseGame,
   setEnv(t, w) { applyEnv(t, w); }, setNight(on) { applyEnv(on ? 'night' : 'day'); }, setTier, get tier() { return env.tier; }, lockTier() { perf.locked = true; }, get perf() { return perf; },
   city: (id) => { loadCity(id); reset(); updateChunks(true); }, get M() { return M; }, get photos() { return photos; }, get people() { return people; }, get runner() { return runner; }, get bootMs() { return bootMs; }, get cityId() { return city.id; }, cities: CITIES.map((c) => c.id),
-  warp(d) { dist = prevDist = d; nextRow = d + 40; lastRowEnd = d + 6; for (const o of obs) removeObstacle(o); obs = []; coinsList = []; camPos = null; camSnap = true; updateChunks(true); }, segs: SEGS, setSpeedTime(t) { runTime = t; }
+  warp(d) { dist = prevDist = d; nextRow = d + 40; lastRowEnd = d + 6; reserved = []; clearAmb(); for (const o of obs) removeObstacle(o); obs = []; coinsList = []; camPos = null; camSnap = true; updateChunks(true); }, segs: SEGS, setSpeedTime(t) { runTime = t; }
 };
