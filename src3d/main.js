@@ -11,7 +11,8 @@ import { cityMaterials, disposeMaterials, applyMatEnv, makeWorld, CH } from './b
 import { skyline } from './landmarks.js';
 import { createEnv, TOD_NAMES, WX_NAMES, TIERS, TIER_NAMES } from './env.js';
 import { figure, animate, RUNNER, TCK, disposeFigure } from './characters.js';
-import { stripeTexture, labelTexture, busTexture } from './textures.js';
+import { stripeTexture, labelTexture, busTexture, setTexQuality } from './textures.js';
+import { loadAssets } from './assets.js';
 
 const $ = (id) => document.getElementById(id);
 const LANE = 2.2, BASE = 15, MAXS = 36, G = 32, JV = 11.5, SLIDE_T = 0.62, VIEW = 190, AIR_T = 2 * JV / G;
@@ -79,7 +80,7 @@ function applyEnv(tod, wx) {
   applyMatEnv(M, st);
   SM.headl.emissiveIntensity = st.tod === 'day' && !st.gloom ? 0.6 : 2.2;
   SM.coin.emissiveIntensity = st.night ? 0.8 : 0.25;
-  SM.sky.color.copy(scene.fog.color).lerp(new Color(st.night ? '#05070d' : '#4c5663'), st.night ? 0.45 : 0.42);
+  SM.sky.color.copy(scene.fog.color).lerp(new Color(st.night ? '#05070d' : '#46566b'), st.night ? 0.45 : env.photo ? 0.62 : 0.42);
   $('btnNight').textContent = TOD_NAMES[env.tod][1]; $('btnWx').textContent = WX_NAMES[env.wx][1];
   rainSound(st.wet ? (env.wx === 'storm' ? 0.07 : 0.045) : 0);
 }
@@ -309,7 +310,9 @@ window.__appBack = () => { if (state === 'play') { pauseGame(); return 'ok'; } i
 
 // ---------------------------------------------------------------- quality: step down a tier whenever a 4 s window averages < 45 fps
 const perf = { t: 0, n: 0, sum: 0, cnt: 0, avg: 0, locked: false, reset() { this.t = 0; this.n = 0; } };
-function setTier(t, manual = false) { env.setTier(t); store.set('ukh3d_q', t); if (manual) perf.locked = true; $('btnQ').textContent = { ultra: '✨', high: '⚙️', medium: '🔅', low: '🔋' }[t]; resize(); }
+function setTier(t, manual = false) {
+  const q = t === 'low' || t === 'medium' ? 0.5 : 1, reload = city && q !== texQ; texQ = q; setTexQuality(q);
+  env.setTier(t); if (reload) { loadCity(city.id); updateChunks(true); } store.set('ukh3d_q', t); if (manual) perf.locked = true; $('btnQ').textContent = { ultra: '✨', high: '⚙️', medium: '🔅', low: '🔋' }[t]; resize(); }
 function watchQuality(dt) {
   if (state !== 'play' || dt <= 0 || dt > 0.5) return;
   perf.t += dt; perf.n++;
@@ -336,18 +339,28 @@ function loop(now) {
   $('coinN').textContent = coins;
   requestAnimationFrame(loop);
 }
+let texQ = 1;
 const savedTier = store.get('ukh3d_q');
 setTier(TIERS.includes(savedTier) ? savedTier : 'high');
 env.tod = rnd() < 0.6 ? 'day' : rnd() < 0.6 ? 'sunset' : 'night';
 env.wx = pick(['clear', 'clear', 'clear', 'rain', 'storm', 'snow', 'fog']);
-loadCity(savedCity()); reset(); show('start');
-updateChunks(true);
-requestAnimationFrame(loop);
+// photo assets first (decoded from the bundled packs), then the city
+$('btnGo').disabled = true; $('btnGo').textContent = 'ЗАВАНТАЖЕННЯ…';
+const t0 = performance.now();
+loadAssets((f) => { $('btnGo').textContent = 'ЗАВАНТАЖЕННЯ ' + Math.round(f * 100) + '%'; }).then((ok) => {
+  photos = ok;
+  loadCity(savedCity()); reset(); show('start');
+  updateChunks(true);
+  $('btnGo').disabled = false; $('btnGo').textContent = 'БІГТИ ▶';
+  bootMs = Math.round(performance.now() - t0);
+  requestAnimationFrame(loop);
+});
+let photos = false, bootMs = 0;
 // debug / test hook
 window.__g3 = {
   get state() { return state; }, get dist() { return dist; }, get lane() { return p.lane; }, get score() { return score; }, get p() { return p; }, act, start, renderer, camera, scene, env,
   frame: (d) => place(d, 0, 0, {}), get chunks() { return chunks.size; }, get obs() { return obs.length; }, get obsList() { return obs.map((o) => ({ t: o.t, lane: o.lane, d: o.d })); }, pause: pauseGame,
   setEnv(t, w) { applyEnv(t, w); }, setNight(on) { applyEnv(on ? 'night' : 'day'); }, setTier, get tier() { return env.tier; }, lockTier() { perf.locked = true; }, get perf() { return perf; },
-  city: (id) => { loadCity(id); reset(); updateChunks(true); }, get M() { return M; }, get cityId() { return city.id; }, cities: CITIES.map((c) => c.id),
+  city: (id) => { loadCity(id); reset(); updateChunks(true); }, get M() { return M; }, get photos() { return photos; }, get bootMs() { return bootMs; }, get cityId() { return city.id; }, cities: CITIES.map((c) => c.id),
   warp(d) { dist = prevDist = d; nextRow = d + 40; lastRowEnd = d + 6; for (const o of obs) removeObstacle(o); obs = []; coinsList = []; camPos = null; camSnap = true; updateChunks(true); }, segs: SEGS, setSpeedTime(t) { runTime = t; }
 };

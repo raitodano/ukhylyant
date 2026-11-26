@@ -97,6 +97,8 @@
 web/            гра: один файл index.html + шрифт Rubik (OFL) для офлайну
 web/3d.html     експериментальний 3D-прототип (Львів) на Three.js; web/3d.js — зібраний бандл
 src3d/          вихідний код 3D-прототипу (збирається в web/3d.js)
+web/assets/     фото-текстури й панорами неба (CC0, ambientCG і Poly Haven), запаковані в JS
+tools/          завантаження й підготовка цих ресурсів (fetch_assets.py, build_assets.py)
 android/        Android-обгортка (WebView), Gradle-проєкт
 docs/           скриншоти й іконка
 .github/        CI: збирає APK і сам випускає реліз для нової версії

@@ -1,7 +1,7 @@
 // The city around the route: per-city PBR materials, and chunks of street (road, sidewalks, houses of the city's facade
 // families, roofs, details, trees, lamps, wires, parked cars, parks, building sites, squares with landmarks).
 // Everything of one material inside a 50 m chunk is merged into one mesh.
-import { Mesh, Group, MeshStandardMaterial, MeshBasicMaterial, AdditiveBlending, IcosahedronGeometry, CylinderGeometry, BoxGeometry, DoubleSide } from 'three';
+import { Mesh, Group, MeshStandardMaterial, MeshBasicMaterial, MeshDepthMaterial, RGBADepthPacking, AdditiveBlending, IcosahedronGeometry, CylinderGeometry, BoxGeometry, DoubleSide } from 'three';
 import { GB, col, makeFrame, L, LN, box, frameMatrix } from './geo.js';
 import { segAt, frame, place, SEGS, CORNER_R } from './world.js';
 import { STT } from './cities.js';
@@ -9,6 +9,8 @@ import { landmark } from './landmarks.js';
 import * as TX from './textures.js';
 
 export const CH = 50;
+// shared shadow-depth material: city surfaces are opaque, so the shadow pass never needs (and must not keep) their colour maps
+const DEPTH = new MeshDepthMaterial({ depthPacking: RGBADepthPacking });
 const std = (o) => new MeshStandardMaterial({ roughness: 0.9, metalness: 0, ...o });
 // ---------------------------------------------------------------- materials of one city
 export function cityMaterials(city) {
@@ -367,7 +369,7 @@ export function makeWorld(scene, city, M, seed) {
     for (const f of Object.keys(G.wall)) mats.push([null, M.wall[f], 1, 1, G.wall[f]]);
     for (const [k, m, cast, recv, gb] of mats) {
       const geo = (gb || G[k]).build(); if (!geo) continue;
-      const mesh = new Mesh(geo, m); mesh.castShadow = !!cast; mesh.receiveShadow = !!recv;
+      const mesh = new Mesh(geo, m); mesh.castShadow = !!cast; mesh.receiveShadow = !!recv; if (cast) mesh.customDepthMaterial = DEPTH;
       if (m === M.glow || m === M.ao) mesh.renderOrder = 1;
       group.add(mesh);
     }

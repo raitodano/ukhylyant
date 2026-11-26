@@ -1,0 +1,107 @@
+{
+  "license": "All source assets are CC0 1.0 (public domain): ambientCG.com materials and Poly Haven skies. IDs below.",
+  "materials": {
+    "cobble": {
+      "acg": "PavingStones070",
+      "size": 1024,
+      "tile_m": 1.7
+    },
+    "asphalt": {
+      "acg": "Asphalt031",
+      "size": 1024,
+      "tile_m": 2.3,
+      "tone": [
+        0.62,
+        0.0
+      ]
+    },
+    "paving": {
+      "acg": "PavingStones006",
+      "size": 512,
+      "tile_m": 2.0
+    },
+    "pavingOld": {
+      "acg": "PavingStones046",
+      "size": 512,
+      "tile_m": 1.6
+    },
+    "grass": {
+      "acg": "Grass004",
+      "size": 512,
+      "tile_m": 2.0
+    },
+    "plaster": {
+      "acg": "Plaster001",
+      "size": 512,
+      "tile_m": 1.9,
+      "tone": [
+        1.0,
+        0.0
+      ]
+    },
+    "concrete": {
+      "acg": "Concrete034",
+      "size": 512,
+      "tile_m": 2.6,
+      "tone": [
+        1.0,
+        0.0
+      ]
+    },
+    "bricks": {
+      "acg": "Bricks105",
+      "size": 512,
+      "tile_m": 1.9,
+      "tone": [
+        1.15,
+        0.85
+      ]
+    },
+    "roofTiles": {
+      "acg": "RoofingTiles014A",
+      "size": 512,
+      "tile_m": 2.0
+    },
+    "roofFlat": {
+      "acg": "Concrete034",
+      "size": 256,
+      "tile_m": 4.0,
+      "tone": [
+        0.55,
+        0.0
+      ]
+    },
+    "tower": {
+      "acg": "Facade018A",
+      "size": 1024,
+      "tile_m": 13.0
+    }
+  },
+  "skies": {
+    "day": {
+      "ph": "kloofendal_48d_partly_cloudy_puresky",
+      "key": 0.55
+    },
+    "sunset": {
+      "ph": "qwantani_sunset_puresky",
+      "key": 0.22
+    },
+    "night": {
+      "ph": "qwantani_night_puresky",
+      "key": 0.035,
+      "tint": [
+        0.75,
+        0.85,
+        1.15
+      ]
+    },
+    "overcast": {
+      "ph": "kloofendal_overcast_puresky",
+      "key": 0.5
+    },
+    "misty": {
+      "ph": "kloofendal_28d_misty_puresky",
+      "key": 0.45
+    }
+  }
+}

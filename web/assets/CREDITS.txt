@@ -1,0 +1,6 @@
+Photo assets used by the 3D mode — all CC0 1.0 (public domain), no attribution required, credited with thanks:
+  Materials: ambientCG.com — PavingStones070, Asphalt031, PavingStones006, PavingStones046, Grass004, Plaster001,
+             Concrete034, Bricks105, RoofingTiles014A, Facade018A
+  Skies:     polyhaven.com — kloofendal_48d_partly_cloudy_puresky, qwantani_sunset_puresky, qwantani_night_puresky,
+             kloofendal_overcast_puresky, kloofendal_28d_misty_puresky
+Rebuild: python3 tools/fetch_assets.py && python3 tools/build_assets.py (sources in tools/assets.json)

@@ -4,7 +4,7 @@
 import {
   Color, Vector3, FogExp2, HemisphereLight, DirectionalLight, PointLight, Mesh, MeshBasicMaterial, SphereGeometry, CircleGeometry,
   BackSide, BufferGeometry, BufferAttribute, Points, PointsMaterial, LineSegments, LineBasicMaterial, AdditiveBlending, DynamicDrawUsage,
-  Scene, PMREMGenerator, WebGLRenderTarget, HalfFloatType, Vector2, PCFShadowMap, ACESFilmicToneMapping, SRGBColorSpace
+  Scene, PMREMGenerator, Texture, EquirectangularReflectionMapping, WebGLRenderTarget, HalfFloatType, Vector2, PCFShadowMap, ACESFilmicToneMapping, SRGBColorSpace
 } from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -12,6 +12,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { glowTexture } from './textures.js';
+import { PH } from './assets.js';
 
 export const TOD_NAMES = { day: ['День', '☀️'], sunset: ['Захід сонця', '🌇'], night: ['Ніч', '🌙'] };
 export const WX_NAMES = { clear: ['Ясно', '🌤️'], rain: ['Дощ', '🌧️'], storm: ['Гроза', '⛈️'], snow: ['Сніг', '🌨️'], fog: ['Туман', '🌫️'] };
@@ -79,8 +80,9 @@ export function createEnv(renderer, scene, camera) {
   const pmrem = new PMREMGenerator(renderer), envScene = new Scene();
   const envSky = new Mesh(sky.geometry, sky.material); envSky.scale.setScalar(100); envScene.add(envSky);
   const envDome = new Mesh(domeGeo, domeMat); envDome.scale.setScalar(0.25); envScene.add(envDome);
-  let envRT = null;
+  let envRT = null; const skyTex = {};
   function bakeEnv() {
+    if (E.photo) { const rt = pmrem.fromEquirectangular(E.photo); if (envRT) envRT.dispose(); envRT = rt; scene.environment = rt.texture; return; }
     envSky.visible = !!E.phys; envDome.visible = !E.phys;
     // the sky shader's radiance is far brighter than the scene's light units and has the sun disc in it: bake without the disc, scaled down
     const u = sky.material.uniforms, g0 = u.skyGain.value, d0 = u.showSunDisc.value;
@@ -131,14 +133,31 @@ export function createEnv(renderer, scene, camera) {
       gainBase = S.gain * (W.gain || 1); u.skyGain.value = gainBase;
     } else paintDome(mixc(S.top), mixc(S.hor), night ? 0.12 : W.mix > 0.5 ? 0.05 : 0.3);
     sun.color.set(S.sunCol); sun.intensity = S.sunI * W.sun; sun.shadow.intensity = W.mix > 0.5 ? 0.4 : 1;
+    E.photo = null; scene.background = null;
+    if (PH.sky) {   // photographed sky panoramas (CC0, Poly Haven): background, environment light and the sun all come from the photo
+      const key = night ? (W.mix > 0.5 ? 'overcast' : 'night') : E.wx === 'fog' ? 'misty' : W.mix > 0.5 ? 'overcast' : E.tod === 'sunset' ? 'sunset' : 'day';
+      const sk = PH.sky[key];
+      if (sk && sk.img) {
+        if (!skyTex[key]) { const t = new Texture(sk.img); t.colorSpace = SRGBColorSpace; t.mapping = EquirectangularReflectionMapping; t.needsUpdate = true; skyTex[key] = t; }
+        const dim = night ? (W.mix > 0.5 ? 0.1 : 1) : E.wx === 'storm' ? 0.45 : E.wx === 'rain' ? 0.72 : E.wx === 'snow' ? 0.95 : 1;
+        E.photo = skyTex[key]; scene.background = E.photo; scene.backgroundIntensity = dim; E.bgBase = dim;
+        sky.visible = false; dome.visible = false; stars.visible = false; moon.visible = false;
+        if (!night) E.sunDir.set(-sk.sun[0], Math.max(0.08, sk.sun[1]), -sk.sun[2]).normalize();
+        const sc = new Color().setRGB(sk.sunCol[0], sk.sunCol[1], sk.sunCol[2]); if (E.tod === 'sunset') sc.lerp(new Color('#ffffff'), 0.45);
+        if (!night && W.mix < 0.5) sun.color.copy(sc);
+        scene.fog.color.setRGB(sk.hor[0], sk.hor[1], sk.hor[2], SRGBColorSpace).multiplyScalar(dim * (night ? 0.35 : 1));
+        if (W.tint && !night && key === 'day') scene.fog.color.lerp(new Color(W.tint), W.mix);
+      }
+    }
     hemi.color.copy(mixc(S.hemiSky)); hemi.groundColor.set(S.hemiGround); hemiBase = S.hemiI * (W.mix ? 1.3 : 1); hemi.intensity = hemiBase;
     fill.intensity = night ? 0.08 : 0.22;
     envBase = S.envI * (W.mix > 0.5 ? 0.75 : 1); scene.environmentIntensity = envBase;
+    if (E.photo) { hemiBase *= 0.35; hemi.intensity = hemiBase; envBase = (night ? 0.3 : W.mix > 0.5 ? 0.45 : 0.25) * (night ? 1 : scene.backgroundIntensity); scene.environmentIntensity = envBase; scene.fog.density *= 0.55; if (!night) sun.intensity *= 1.12; }
     near.intensity = night ? 24 : (E.tod === 'sunset' || W.mix > 0.7) ? 5 : 0;
     drops = W.drops ? Math.round(W.drops * (E.tier === 'low' ? 0.5 : 1)) : 0;
     rain.visible = drops > 0; rainGeo.setDrawRange(0, drops * 2); rain.material.opacity = night ? 0.28 : 0.45;
     snow.visible = !!W.snow;
-    renderer.toneMappingExposure = night ? 1.15 : E.tod === 'sunset' ? 0.9 : 0.95;
+    renderer.toneMappingExposure = (night ? 1.15 : E.tod === 'sunset' ? 0.9 : 0.95) * (E.photo ? 0.9 : 1);
     const gloom = W.mix > 0.6 && !night;
     E.state = { tod: E.tod, wx: E.wx, night, gloom, wet: E.wx === 'rain' || E.wx === 'storm', snow: !!W.snow,
       win: S.win + (gloom ? 0.35 : 0), lamp: S.lamp + (W.mix > 0.7 ? 0.9 : 0), glow: night ? 0.85 : E.tod === 'sunset' ? 0.3 : W.mix > 0.7 ? 0.2 : 0 };
@@ -202,8 +221,8 @@ export function createEnv(renderer, scene, camera) {
     if (E.flash > 0) {
       E.flash = Math.max(0, E.flash - dt * 3.2);
       const f = E.flash > 0.75 || (E.flash > 0.3 && E.flash < 0.5) ? E.flash : 0;
-      hemi.intensity = hemiBase + f * 4; scene.environmentIntensity = envBase + f * 2; sky.material.uniforms.skyGain.value = gainBase + f * 2.5;
-    } else { hemi.intensity = hemiBase; scene.environmentIntensity = envBase; sky.material.uniforms.skyGain.value = gainBase; }
+      hemi.intensity = hemiBase + f * 4; scene.environmentIntensity = envBase + f * 2; if (E.photo) scene.backgroundIntensity = E.bgBase + f * 1.5; sky.material.uniforms.skyGain.value = gainBase + f * 2.5;
+    } else { hemi.intensity = hemiBase; scene.environmentIntensity = envBase; if (E.photo) scene.backgroundIntensity = E.bgBase; sky.material.uniforms.skyGain.value = gainBase; }
   };
   E.flashNow = () => { E.flash = 1; };
   return E;

@@ -16,3 +16,4 @@ android/.kotlin/
 
 # JS tooling
 node_modules/
+.asset-cache/

@@ -1,10 +1,11 @@
 // All textures are drawn on canvases at start-up: no external assets, works offline (also from file:///android_asset).
 // Every surface gets a colour map plus a normal map (derived from a height canvas) and, where it matters, a roughness map,
 // so MeshStandardMaterial can light bumps and make glass/wet stone reflect the sky.
+import { PH } from './assets.js';
 import { CanvasTexture, SRGBColorSpace, NoColorSpace, RepeatWrapping, ClampToEdgeWrapping, LinearMipmapLinearFilter } from 'three';
 
 export function canvas(w, h, draw) {
-  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const c = document.createElement('canvas'); c.width = w; c.height = h; c.__st = new Error().stack;
   if (draw) draw(c.getContext('2d'), w, h);
   return c;
 }
@@ -33,25 +34,44 @@ export function normalFrom(hc, strength = 2, wrap = true) {
   og.putImageData(img, 0, 0);
   return out;
 }
-// paint the same shapes into several layers at once: colour, height, roughness, emissive
-function layers(w, h, base) {
-  const L = {};
-  for (const k of ['c', 'h', 'r', 'e']) { L[k] = canvas(w, h); const g = L[k].getContext('2d'); g.fillStyle = base[k]; g.fillRect(0, 0, w, h); L[k + 'g'] = g; }
+// paint the same shapes into several layers at once: colour, height, roughness, emissive.
+// With a photo material the colour / roughness layers start from the tiled photo and its normal map is kept wherever
+// nothing was painted on top (painted features get normals from the height layer).
+function tile(g, img, w, h, nx, ny) { if (!img) return; for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) g.drawImage(img, i * w / nx, j * h / ny, w / nx + 0.5, h / ny + 0.5); }
+function layers(w, h, base, photo = null, nx = 1, ny = 1) {
+  const L = { w, h, hb: parseInt(base.h.replace(/[^0-9,]/g, '').split(',')[0], 10) };
+  for (const k of ['c', 'h', 'r', 'e']) { L[k] = canvas(w, h); L[k].__k = k; const g = L[k].getContext('2d'); g.fillStyle = base[k]; g.fillRect(0, 0, w, h); L[k + 'g'] = g; }
+  if (photo && photo.c) {
+    L.photo = true; tile(L.cg, photo.c, w, h, nx, ny); if (photo.r) tile(L.rg, photo.r, w, h, nx, ny);
+    if (photo.n) { L.n = canvas(w, h); tile(L.n.getContext('2d'), photo.n, w, h, nx, ny); }
+  }
+  L.scale = (k) => { for (const q of ['c', 'h', 'r', 'e']) L[q + 'g'].setTransform(k, 0, 0, k, 0, 0); };
   L.rect = (x, y, rw, rh, s) => { for (const k of ['c', 'h', 'r', 'e']) if (s[k] != null) { L[k + 'g'].fillStyle = s[k]; L[k + 'g'].fillRect(x, y, rw, rh); } };
   L.path = (fn, s) => { for (const k of ['c', 'h', 'r', 'e']) if (s[k] != null) { const g = L[k + 'g']; g.fillStyle = s[k]; g.beginPath(); fn(g); g.fill(); } };
-  L.noise = (k, a, n = 2600, sz = 2) => { const g = L[k + 'g']; for (let i = 0; i < n; i++) { const v = rnd(); g.fillStyle = `rgba(${v < 0.5 ? '0,0,0' : '255,255,255'},${a * rnd()})`; g.fillRect(rnd() * w, rnd() * h, sz, sz); } };
+  L.noise = (k, a, n = 2600, sz = 2) => { if (L.photo) return; const g = L[k + 'g']; for (let i = 0; i < n; i++) { const v = rnd(); g.fillStyle = `rgba(${v < 0.5 ? '0,0,0' : '255,255,255'},${a * rnd()})`; g.fillRect(rnd() * w, rnd() * h, sz, sz); } };
   return L;
 }
 const grey = (v) => `rgb(${v | 0},${v | 0},${v | 0})`;
 function finish(L, { normal = 2.2, srgbE = true } = {}) {
-  return { map: tex(L.c), normal: tex(normalFrom(L.h, normal), { srgb: false }), rough: tex(L.r, { srgb: false }), emissive: tex(L.e, { srgb: srgbE }) };
+  let nc = normalFrom(L.h, normal);
+  if (L.n) {   // photo normals where the height layer is untouched, painted-feature normals elsewhere
+    const w = L.w, h = L.h.height, hd = L.hg.getImageData(0, 0, w, h).data, pc = L.n.getContext('2d'), pd = pc.getImageData(0, 0, w, h), fd = nc.getContext('2d').getImageData(0, 0, w, h).data;
+    for (let i = 0; i < hd.length; i += 4) if (hd[i] !== L.hb) { pd.data[i] = fd[i]; pd.data[i + 1] = fd[i + 1]; pd.data[i + 2] = fd[i + 2]; }
+    pc.putImageData(pd, 0, 0); nc = L.n;
+  }
+  return { map: tex(L.c), normal: tex(nc, { srgb: false }), rough: tex(L.r, { srgb: false }), emissive: tex(L.e, { srgb: srgbE }) };
 }
+let Q = 1;   // texture resolution factor (1 = full, 0.5 on the low quality tiers)
+export function setTexQuality(q) { Q = q; }
+const pm = (k) => (PH.mat && PH.mat[k]) || null;
+const reps = (m, len) => Math.max(1, Math.round(len / ((m && m.tile) || len)));
 
 // ---------------------------------------------------------------- roads
 // u spans the 6.8 m road (u = (x + 3.4) / 6.8), v repeats every 5 m. Rails at the lane centres where a city has trams.
 export function roadTextures({ cobble, rails, markings }) {
-  const w = 512, h = 384, L = layers(w, h, { c: cobble ? '#6f655b' : '#4a4b4e', h: grey(90), r: grey(cobble ? 200 : 225), e: '#000' });
-  if (cobble) {
+  const ph = pm(cobble ? 'cobble' : 'asphalt'), w = Math.round((ph ? 1024 : 512) * Q), h = Math.round(w * 0.75), k = w / 512;
+  const L = layers(w, h, { c: cobble ? '#6f655b' : '#4a4b4e', h: grey(90), r: grey(cobble ? 200 : 225), e: '#000' }, ph, reps(ph, 6.8), reps(ph, 5));
+  if (cobble && !ph) {
     const rows = 18, sh = h / rows;
     for (let r = 0; r < rows; r++) {
       let x = (r % 2) * 9 - 9;
@@ -62,34 +82,35 @@ export function roadTextures({ cobble, rails, markings }) {
         x += sw;
       }
     }
-  } else {
+  } else if (!cobble) {
     L.noise('c', 0.25, 26000, 2); L.noise('h', 0.5, 30000, 1); L.noise('r', 0.3, 9000, 3);
-    for (let i = 0; i < 6; i++) { const x = rnd() * w, y = rnd() * h; L.path((g) => g.ellipse(x, y, 20 + rnd() * 50, 8 + rnd() * 20, rnd() * 3, 0, 7), { c: 'rgba(30,30,32,0.25)' }); }   // patches
-    if (markings) for (const lane of [-1.1, 1.1]) { const u = (lane + 3.4) / 6.8 * w; L.rect(u - 3, 0, 6, h * 0.6, { c: '#d8d8d2', h: grey(110), r: grey(150) }); }
-    for (const e of [0.6, 6.2]) { const u = e / 6.8 * w; L.rect(u - 2.5, 0, 5, h, { c: '#cfcfc8', h: grey(105), r: grey(160) }); }
+    for (let i = 0; i < 6; i++) { const x = rnd() * w, y = rnd() * h; L.path((g) => g.ellipse(x, y, (20 + rnd() * 50) * k, (8 + rnd() * 20) * k, rnd() * 3, 0, 7), { c: 'rgba(30,30,32,0.22)', r: grey(150) }); }   // patches
+    for (let i = 0; i < 3; i++) { const x = rnd() * w; L.path((g) => { g.moveTo(x, 0); for (let y = 0; y <= h; y += 16 * k) g.lineTo(x + Math.sin(y * 0.05 + i) * 10 * k, y); g.lineTo(x + 2 * k, h); g.lineTo(x + 2 * k, 0); }, { c: 'rgba(20,20,20,0.35)', h: grey(70) }); }   // tar cracks
+    if (markings) for (const lane of [-1.1, 1.1]) { const u = (lane + 3.4) / 6.8 * w; L.rect(u - 3 * k, 0, 6 * k, h * 0.6, { c: '#dcdcd4', h: grey(100), r: grey(140) }); }
+    for (const e of [0.6, 6.2]) { const u = e / 6.8 * w; L.rect(u - 2.5 * k, 0, 5 * k, h, { c: '#d4d4cc', h: grey(100), r: grey(150) }); }
   }
   if (rails) for (const lane of [-2.2, 0, 2.2]) for (const q of [-0.72, 0.72]) {
     const u = (lane + q + 3.4) / 6.8 * w;
-    L.rect(u - 6, 0, 12, h, { c: '#3f3c3a', h: grey(60), r: grey(170) });
-    L.rect(u - 2.5, 0, 5, h, { c: '#b9bcc0', h: grey(140), r: grey(55) });
+    L.rect(u - 6 * k, 0, 12 * k, h, { c: '#3f3c3a', h: grey(60), r: grey(170) });
+    L.rect(u - 2.5 * k, 0, 5 * k, h, { c: '#b9bcc0', h: grey(140), r: grey(55) });
   }
   const t = finish(L, { normal: cobble ? 3 : 1.4 });
-  for (const k of ['map', 'normal', 'rough']) t[k].wrapS = ClampToEdgeWrapping;
+  for (const q of ['map', 'normal', 'rough']) t[q].wrapS = ClampToEdgeWrapping;
   return t;
 }
 export function sidewalkTextures(stone) {
-  const w = 256, h = 256, L = layers(w, h, { c: stone ? '#c3baac' : '#b9b6b0', h: grey(150), r: grey(215), e: '#000' });
-  const n = stone ? 4 : 8, s = w / n;
-  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
-    const v = (stone ? 175 : 182) + rnd() * 30 | 0;
-    L.rect(i * s + 2, j * s + 2, s - 4, s - 4, { c: `rgb(${v + 6},${v},${v - 8})`, h: grey(170 + rnd() * 30) });
+  const ph = pm(stone ? 'pavingOld' : 'paving'), w = Math.round((ph ? 512 : 256) * Q), h = w;
+  const L = layers(w, h, { c: stone ? '#c3baac' : '#b9b6b0', h: grey(150), r: grey(215), e: '#000' }, ph, reps(ph, 2), reps(ph, 2));
+  if (!ph) {
+    const n = stone ? 4 : 8, s = w / n;
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) { const v = (stone ? 175 : 182) + rnd() * 30 | 0; L.rect(i * s + 2, j * s + 2, s - 4, s - 4, { c: `rgb(${v + 6},${v},${v - 8})`, h: grey(170 + rnd() * 30) }); }
+    L.noise('c', 0.12, 9000, 2); L.noise('h', 0.25, 9000, 1);
   }
-  L.noise('c', 0.12, 9000, 2); L.noise('h', 0.25, 9000, 1);
   return finish(L, { normal: 2 });
 }
 export function grassTextures() {
-  const w = 256, h = 256, L = layers(w, h, { c: '#5d7f3a', h: grey(120), r: grey(240), e: '#000' });
-  for (let i = 0; i < 9000; i++) { const v = rnd(); L.rect(rnd() * w, rnd() * h, 2, 3, { c: v < 0.5 ? '#4b6d2e' : '#6f9446', h: grey(80 + v * 120) }); }
+  const ph = pm('grass'), w = Math.round((ph ? 512 : 256) * Q), h = w, L = layers(w, h, { c: '#5d7f3a', h: grey(120), r: grey(240), e: '#000' }, ph, 1, 1);
+  if (!ph) for (let i = 0; i < 9000; i++) { const v = rnd(); L.rect(rnd() * w, rnd() * h, 2, 3, { c: v < 0.5 ? '#4b6d2e' : '#6f9446', h: grey(80 + v * 120) }); }
   return finish(L, { normal: 1.5 });
 }
 
@@ -101,9 +122,12 @@ export const FAMILY = {
   constructivist: { bw: 3.0, fh: 3.1 }, modern: { bw: 1.6, fh: 3.0 }, brick: { bw: 1.9, fh: 3.2 }
 };
 export function facadeTextures(kind) {
-  const F = FAMILY[kind], BW = 96, BH = Math.round(BW * F.fh / F.bw), w = BW * 4, h = BH * 2;
-  const L = layers(w, h, { c: '#f2efe9', h: grey(150), r: grey(230), e: '#000' });
-  if (kind === 'brick') {
+  if (kind === 'modern' && pm('tower')) return towerTextures();
+  const F = FAMILY[kind], ph = pm(kind === 'brick' ? 'bricks' : kind === 'panel' ? 'concrete' : 'plaster'), k = (ph ? 128 : 96) * Q / 96;
+  const BW = 96, BH = Math.round(BW * F.fh / F.bw), w = Math.round(BW * 4 * k), h = Math.round(BH * 2 * k);
+  const L = layers(w, h, { c: '#f2efe9', h: grey(150), r: grey(230), e: '#000' }, ph, reps(ph, F.bw * 4), reps(ph, F.fh * 2));
+  L.scale(k);
+  if (kind === 'brick' && !ph) {
     const rows = Math.round(h / 7);
     for (let r = 0; r < rows; r++) for (let x = (r % 2) * -6; x < w; x += 12) { const v = 170 + rnd() * 60 | 0; L.rect(x + 0.5, r * 7 + 0.5, 11, 6, { c: `rgb(${v},${v - 20},${v - 30})`, h: grey(165 + rnd() * 25) }); }
   } else if (kind !== 'modern') { L.noise('c', 0.07, 14000, 2); L.noise('h', 0.18, 12000, 2); }
@@ -145,9 +169,24 @@ export function facadeTextures(kind) {
   return { ...finish(L, { normal: kind === 'modern' ? 0.6 : 2.4 }), bw: F.bw * 4, fh: F.fh * 2 };
 }
 function pick(a) { return a[(rnd() * a.length) | 0]; }
+// glass tower from a photo facade: windows become the night-time emissive map (lit at random per window cell)
+function towerTextures() {
+  const ph = pm('tower'), n = Math.round(1024 * Q), L = layers(n, n, { c: '#888', h: grey(150), r: grey(60), e: '#000' }, ph, 1, 1);
+  const d = L.cg.getImageData(0, 0, n, n).data, eg = L.eg, img = eg.getImageData(0, 0, n, n), e = img.data, cells = 40;
+  const lit = []; for (let i = 0; i < cells * cells; i++) lit.push(rnd() < 0.45 ? (rnd() < 0.5 ? [255, 205, 140] : [255, 232, 190]) : null);
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const i = (y * n + x) * 4, r = d[i], g = d[i + 1], b = d[i + 2], lum = 0.3 * r + 0.59 * g + 0.11 * b;
+    const c = lit[((y * cells / n) | 0) * cells + ((x * cells / n) | 0)];
+    if (c && lum < 110 && b >= r) { e[i] = c[0]; e[i + 1] = c[1]; e[i + 2] = c[2]; }
+  }
+  eg.putImageData(img, 0, 0);
+  return { ...finish(L, { normal: 1 }), bw: 13, fh: 13 };
+}
 
 export function roofTextures(flat) {
-  const w = 256, h = 256, L = layers(w, h, { c: flat ? '#6c6a66' : '#a8492f', h: grey(120), r: grey(flat ? 235 : 160), e: '#000' });
+  const ph = pm(flat ? 'roofFlat' : 'roofTiles'), w = Math.round((ph ? 512 : 256) * Q), h = w;
+  const L = layers(w, h, { c: flat ? '#6c6a66' : '#a8492f', h: grey(120), r: grey(flat ? 235 : 160), e: '#000' }, ph, 1, 1);
+  if (ph) return finish(L, { normal: 2 });
   if (flat) { L.noise('c', 0.3, 20000, 2); L.noise('h', 0.5, 20000, 2); for (let i = 0; i < 4; i++) L.rect(0, i * 64, w, 2, { c: '#56544f', h: grey(170) }); }
   else for (let r = 0; r < 10; r++) for (let c = 0; c < 11; c++) {
     const x = c * 24 + (r % 2) * 12, y = r * 26, v = rnd();
