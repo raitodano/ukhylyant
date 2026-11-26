@@ -13,6 +13,7 @@ import { createEnv, TOD_NAMES, WX_NAMES, TIERS, TIER_NAMES } from './env.js';
 import { figure, animate, RUNNER, TCK, disposeFigure } from './characters.js';
 import { stripeTexture, labelTexture, busTexture, setTexQuality } from './textures.js';
 import { loadAssets } from './assets.js';
+import { vehicleMesh, setVehicleEnv } from './vehicles.js';
 import { loadPeople, makePerson, personAnimate, peopleTick, peopleReady } from './people.js';
 
 const $ = (id) => document.getElementById(id);
@@ -30,6 +31,7 @@ cv.addEventListener('webglcontextlost', (e) => { e.preventDefault(); fail(); });
 const scene = new Scene();
 const camera = new PerspectiveCamera(65, 1, 0.3, 560);
 const env = createEnv(renderer, scene, camera);
+env.onEnv = (t) => setVehicleEnv(t);
 
 // ---------------------------------------------------------------- shared (city-independent) materials
 const std = (o) => new MeshStandardMaterial({ roughness: 0.8, metalness: 0, ...o });
@@ -63,7 +65,7 @@ function loadCity(id) {
   city = CITYM[id]; store.set('ukh3d_city', id);
   const seed = hashStr(id + ':3d');
   buildRoute(seed, city.pool);
-  M = cityMaterials(city);
+  M = cityMaterials(city, texQ === 1);
   world = makeWorld(scene, city, M, seed);
   const gb = new GB(); skyline(city.sky, gb); const geo = gb.build(); if (geo) { skyMesh = new Mesh(geo, SM.sky); skyMesh.frustumCulled = false; skyMesh.renderOrder = -1; skyGroup.add(skyMesh); }
   applyEnv();
@@ -111,12 +113,9 @@ function makeObstacle(o) {
   const g = new Group(), add = (geo, m, x, y, z) => { const k = new Mesh(geo, m); k.position.set(x, y, z); k.castShadow = true; k.receiveShadow = true; g.add(k); return k; };
   if (o.t === 'bar') { add(OG.bar, SM.stripe, 0, 0.5, 0).rotation.y = Math.PI / 2; }
   else if (o.t === 'gate') { for (const s of [-1.05, 1.05]) add(OG.pole, SM.gatePole, 0, 1.37, s); add(OG.banner, SM.stij, 0, 1.9, 0).rotation.y = -Math.PI / 2; }
-  else if (o.t === 'bus') {
-    add(OG.bus, [SM.white, SM.white, SM.white, SM.white, SM.busBody, SM.busBody], 0, 1.53, 0); add(OG.roofBox, SM.white, 0.2, 2.76, 0);
-    add(OG.wind, SM.glass, -2.62, 1.95, 0).rotation.y = -Math.PI / 2; add(OG.plate, SM.busPlate, -2.62, 0.75, 0).rotation.y = -Math.PI / 2;
-    for (const s of [-0.72, 0.72]) add(OG.head, SM.headl, -2.62, 1.05, s);
-    for (const s of [-1.07, 1.07]) add(OG.mirror, SM.tyre, -2.45, 2.0, s);
-    for (const ax of [-1.7, 1.7]) for (const s of [-0.9, 0.9]) add(OG.wheel, SM.tyre, ax, 0.42, s).rotation.x = Math.PI / 2;
+  else if (o.t === 'bus') {   // the TCK van ("бус"): a white Sprinter-like van with ТЦК markings
+    const v = vehicleMesh('van', '#f1f1ee', texQ === 1); v.rotation.y = Math.PI; g.add(v);
+    for (const s of [-1, 1]) { const l = add(OG.plate, SM.busPlate, 0.2, 1.55, s * 1.0); l.rotation.y = s > 0 ? 0 : Math.PI; l.scale.set(1.6, 1.6, 1); }
   }
   else if (o.t === 'patrol') { o.fig = peopleReady() ? makePerson(scene, 'patrol', SM.shadow) : figure(scene, { ...TCK, face: true }, null, SM.shadow); return; }
   scene.add(g); o.mesh = g;
@@ -367,7 +366,7 @@ loadAssets((f) => { $('btnGo').textContent = 'ЗАВАНТАЖЕННЯ ' + Math.
 let photos = false, people = false, bootMs = 0;
 // debug / test hook
 window.__g3 = {
-  get state() { return state; }, get dist() { return dist; }, get lane() { return p.lane; }, get score() { return score; }, get p() { return p; }, act, start, renderer, camera, scene, env,
+  get state() { return state; }, get dist() { return dist; }, get lane() { return p.lane; }, get score() { return score; }, get p() { return p; }, act, start, renderer, camera, scene, env, vehicleMesh,
   frame: (d) => place(d, 0, 0, {}), get chunks() { return chunks.size; }, get obs() { return obs.length; }, get obsList() { return obs.map((o) => ({ t: o.t, lane: o.lane, d: o.d })); }, pause: pauseGame,
   setEnv(t, w) { applyEnv(t, w); }, setNight(on) { applyEnv(on ? 'night' : 'day'); }, setTier, get tier() { return env.tier; }, lockTier() { perf.locked = true; }, get perf() { return perf; },
   city: (id) => { loadCity(id); reset(); updateChunks(true); }, get M() { return M; }, get photos() { return photos; }, get people() { return people; }, get runner() { return runner; }, get bootMs() { return bootMs; }, get cityId() { return city.id; }, cities: CITIES.map((c) => c.id),

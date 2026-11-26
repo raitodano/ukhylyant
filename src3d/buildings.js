@@ -6,6 +6,7 @@ import { GB, col, makeFrame, L, LN, box, frameMatrix } from './geo.js';
 import { segAt, frame, place, SEGS, CORNER_R } from './world.js';
 import { STT } from './cities.js';
 import { landmark } from './landmarks.js';
+import { vehicleParts, plateUV, vehicleMaterials, CAR_COLORS, BUS_COLORS } from './vehicles.js';
 import * as TX from './textures.js';
 
 export const CH = 50;
@@ -13,7 +14,7 @@ export const CH = 50;
 const DEPTH = new MeshDepthMaterial({ depthPacking: RGBADepthPacking });
 const std = (o) => new MeshStandardMaterial({ roughness: 0.9, metalness: 0, ...o });
 // ---------------------------------------------------------------- materials of one city
-export function cityMaterials(city) {
+export function cityMaterials(city, hq = true) {
   TX.reseed(city.id.length * 977 + city.id.charCodeAt(0));
   const road = TX.roadTextures({ cobble: !!city.cobble, rails: !!city.tram, markings: !city.cobble });
   const asph = TX.roadTextures({ cobble: false, rails: false, markings: false });
@@ -45,6 +46,7 @@ export function cityMaterials(city) {
   };
   M.ao.map.repeat.set(1, 1);
   M.ao.color.set('#ffffff'); M.ao.blending = 1;   // normal blending; the texture's alpha carries the darkness
+  M.v = vehicleMaterials(hq);   // shared, not disposed with the city
   return M;
 }
 export function disposeMaterials(M) {
@@ -161,13 +163,29 @@ export function makeWorld(scene, city, M, seed) {
       box(G.det, F, -1.3, 1.3, 2.5, 2.65, -1.0, 1.0, col('#b8322a'), 1, 1);
     } else if (v < 0.7) { box(G.metal, F, -0.04, 0.04, 0, 2.6, -0.04, 0.04, [1, 1, 1], 1, 1); box(G.det, F, -0.5, 0.5, 2.3, 2.6, -0.03, 0.03, col('#1f4f8a'), 1, 1); }
   }
+  // realistic vehicles: cached lofted bodies merged into this chunk's buffers (paint colour as vertex colour)
+  function vehicle(G, F, x, z, type, color, rot, r) {
+    const parts = vehicleParts(type), m = frameMatrix(F, x, 0, z, rot), c = col(color);
+    for (const [k, list] of Object.entries(parts)) for (const g of list) {
+      if (k === 'plate') { const q = plateUV(g.clone(), (r() * 8) | 0); G.vplate.geo(q, m, [1, 1, 1]); q.dispose(); continue; }
+      G['v' + k].geo(g, m, k === 'paint' ? c : k === 'glass' && type === 'bus' ? [0.8, 0.85, 0.9] : [1, 1, 1]);
+    }
+  }
   function car(G, F, x, z, r) {
-    const c = col(['#b8322a', '#1f3f6e', '#e8e8e4', '#2b2b2e', '#8a9096', '#3d6b4a', '#c9a227'][(r() * 7) | 0]);
-    box(G.det, F, x - 2.1, x + 2.1, 0.32, 1.0, z - 0.85, z + 0.85, c, 1, 1);
-    box(G.glass, F, x - 1.2, x + 1.0, 1.0, 1.5, z - 0.78, z + 0.78, [0.55, 0.6, 0.68], 1, 1);
-    box(G.det, F, x - 1.15, x + 0.95, 1.5, 1.56, z - 0.74, z + 0.74, c, 1, 1);
-    for (const wx of [-1.35, 1.35]) for (const wz of [-0.8, 0.8]) box(G.det, F, x + wx - 0.33, x + wx + 0.33, 0.01, 0.66, z + wz - 0.12, z + wz + 0.12, col('#18181a'), 1, 1);
-    for (const wz of [-0.55, 0.55]) box(G.lamp, F, x + 2.1, x + 2.14, 0.72, 0.86, z + wz - 0.16, z + wz + 0.16, [1, 1, 1], 1, 1);
+    const t = ['sedan', 'sedan', 'hatch', 'suv', 'hatch', 'sedan', 'van'][(r() * 7) | 0];
+    const color = t === 'van' ? (r() < 0.7 ? '#eeeeea' : '#c9cdd2') : CAR_COLORS[(r() * CAR_COLORS.length) | 0];
+    vehicle(G, F, x, z, t, color, r() < 0.65 ? 0 : Math.PI, r);
+  }
+  function busStop(G, d, s, r) {   // a city bus (or a trolleybus) at a stop, with a glass shelter
+    const F = frameAt(d), type = 'bus', color = BUS_COLORS[city.id] || ['#1f5ea8', '#d7b52c', '#2f7b3d', '#e8e6df'][(r() * 4) | 0];
+    vehicle(G, F, 0, s * 4.75, type, color, 0, r);
+    if (city.trolley && !city.tram) for (const dz of [-0.35, 0.35]) box(G.metal, F, -4.4, -1.2, 3.02, 3.08, s * 4.75 + dz - 0.03, s * 4.75 + dz + 0.03, [1, 1, 1], 1, 1);   // trolley poles, lowered
+    const Fs = frameAt(d + 2, s * 7.4, 0.16);
+    box(G.metal, Fs, -2, 2, 2.5, 2.6, -0.8, 0.8, [1, 1, 1], 1, 1);
+    box(G.glass, Fs, -2, 2, 0.1, 2.5, s * 0.75 - 0.02, s * 0.75 + 0.02, [0.85, 0.9, 0.95], 1, 1);
+    for (const q of [-1.95, 1.95]) box(G.metal, Fs, q - 0.04, q + 0.04, 0, 2.5, -0.8, 0.8, [1, 1, 1], 1, 1);
+    box(G.det, Fs, -1.6, 1.6, 0.45, 0.5, s * 0.3 - 0.2, s * 0.3 + 0.2, col('#7a5232'), 1, 1);
+    box(G.sign, Fs, -0.4, 0.4, 2.62, 3.0, -0.03, 0.03, [1, 1, 1], 1, 1);
   }
   // ------------------------------------------------ houses
   function buildHouse(G, h, side, bx, flo) {
@@ -250,7 +268,7 @@ export function makeWorld(scene, city, M, seed) {
   // ------------------------------------------------ one chunk
   function buildChunk(c) {
     const d0 = c * CH, d1 = d0 + CH, group = new Group(), r = mulberry(seed * 7919 + c * 131 + 13);
-    const G = { road: new GB(), asph: new GB(), walk: new GB(), grass: new GB(), roofP: new GB(), roofF: new GB(), det: new GB(), leaves: new GB(), metal: new GB(), gold: new GB(), glass: new GB(), lamp: new GB(), glow: new GB(), ao: new GB(), sign: new GB(), wall: {} };
+    const G = { vpaint: new GB(), vglass: new GB(), vchrome: new GB(), vrubber: new GB(), vtrim: new GB(), vhead: new GB(), vtail: new GB(), vplate: new GB(), road: new GB(), asph: new GB(), walk: new GB(), grass: new GB(), roofP: new GB(), roofF: new GB(), det: new GB(), leaves: new GB(), metal: new GB(), gold: new GB(), glass: new GB(), lamp: new GB(), glow: new GB(), ao: new GB(), sign: new GB(), wall: {} };
     for (const f of Object.keys(M.wall)) G.wall[f] = new GB();
     const white = [1, 1, 1], yard = col('#8f8579'), dirt = col('#8a7a62'), grassC = [1, 1, 1];
     ribbon(G.road, d0, d1, -3.4, 3.4, 0, white, 6.8, 5, true);
@@ -287,7 +305,9 @@ export function makeWorld(scene, city, M, seed) {
       const kind = sg.type === 'square' ? 'square' : sg.kind || 'street', step = Math.round(d) % 8 === 0;
       for (const s of [-1, 1]) {
         if (kind === 'avenue' && Math.round(d) % 9 === (s > 0 ? 0 : 4)) { const F = frameAt(d); tree(G, F, 0, s * 7.2, 1.05, city.tree, r); box(G.det, F, -0.7, 0.7, 0.15, 0.19, s * 7.2 - 0.7, s * 7.2 + 0.7, col('#5a4a3a'), 1, 1); }
-        if (kind === 'avenue' && Math.round(d) % 7 === (s > 0 ? 1 : 4) && r() < 0.6) car(G, frameAt(d), 0, s * 4.6, r);
+        const stop = Math.floor(d / 90), atStop = s > 0 && (stop * 7 + seed) % 3 === 0, sd = stop * 90 + 30;
+        if (kind === 'avenue' && atStop && Math.round(d) === sd && segAt(d + 8) && segAt(d - 8) && segAt(d + 8).kind === 'avenue' && segAt(d - 8).kind === 'avenue' && !nearCorner(d, 8)) busStop(G, d, s, r);
+        else if (kind === 'avenue' && Math.round(d) % 7 === (s > 0 ? 1 : 4) && !(atStop && Math.abs(d - sd) < 11) && r() < 0.6) car(G, frameAt(d), 0, s * 4.6, r);
         if (kind === 'boulevard' && step) { tree(G, frameAt(d + (s > 0 ? 0 : 4)), 0, s * 7.6, 1.1, city.tree, r); }
         if (kind === 'boulevard' && Math.round(d) % 16 === (s > 0 ? 6 : 14)) furniture(G, d, s, r, 10.9);
         if (kind === 'park' && Math.round(d) % 6 === (s > 0 ? 0 : 3)) { for (let i = 0; i < 2; i++) tree(G, frameAt(d + r() * 4), 0, s * (9 + r() * 22), 0.9 + r() * 0.4, r() < 0.3 ? 'chestnut' : city.tree, r); }
@@ -365,7 +385,8 @@ export function makeWorld(scene, city, M, seed) {
       }
     }
     // bake meshes
-    const mats = [['road', M.road, 0, 1], ['asph', M.asph, 0, 1], ['walk', M.walk, 0, 1], ['grass', M.grass, 0, 1], ['roofP', M.roofP, 1, 1], ['roofF', M.roofF, 1, 1], ['det', M.det, 1, 1], ['leaves', M.leaves, 1, 1], ['metal', M.metal, 1, 0], ['gold', M.gold, 1, 0], ['glass', M.glass, 0, 0], ['lamp', M.lamp, 0, 0], ['sign', M.sign, 0, 0], ['ao', M.ao, 0, 0], ['glow', M.glow, 0, 0]];
+    const mats = [['road', M.road, 0, 1], ['asph', M.asph, 0, 1], ['walk', M.walk, 0, 1], ['grass', M.grass, 0, 1], ['roofP', M.roofP, 1, 1], ['roofF', M.roofF, 1, 1], ['det', M.det, 1, 1], ['leaves', M.leaves, 1, 1], ['metal', M.metal, 1, 0], ['gold', M.gold, 1, 0], ['glass', M.glass, 0, 0], ['lamp', M.lamp, 0, 0], ['sign', M.sign, 0, 0], ['ao', M.ao, 0, 0], ['glow', M.glow, 0, 0],
+      ['vpaint', M.v.paint, 1, 1], ['vglass', M.v.glass, 1, 0], ['vchrome', M.v.chrome, 0, 0], ['vrubber', M.v.rubber, 1, 0], ['vtrim', M.v.trim, 1, 0], ['vhead', M.v.head, 0, 0], ['vtail', M.v.tail, 0, 0], ['vplate', M.v.plate, 0, 0]];
     for (const f of Object.keys(G.wall)) mats.push([null, M.wall[f], 1, 1, G.wall[f]]);
     for (const [k, m, cast, recv, gb] of mats) {
       const geo = (gb || G[k]).build(); if (!geo) continue;

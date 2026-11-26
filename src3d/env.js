@@ -82,14 +82,14 @@ export function createEnv(renderer, scene, camera) {
   const envDome = new Mesh(domeGeo, domeMat); envDome.scale.setScalar(0.25); envScene.add(envDome);
   let envRT = null; const skyTex = {};
   function bakeEnv() {
-    if (E.photo) { const rt = pmrem.fromEquirectangular(E.photo); if (envRT) envRT.dispose(); envRT = rt; scene.environment = rt.texture; return; }
+    if (E.photo) { const rt = pmrem.fromEquirectangular(E.photo); if (envRT) envRT.dispose(); envRT = rt; scene.environment = rt.texture; if (E.onEnv) E.onEnv(rt.texture); return; }
     envSky.visible = !!E.phys; envDome.visible = !E.phys;
     // the sky shader's radiance is far brighter than the scene's light units and has the sun disc in it: bake without the disc, scaled down
     const u = sky.material.uniforms, g0 = u.skyGain.value, d0 = u.showSunDisc.value;
     u.skyGain.value = g0 * E.bakeGain; u.showSunDisc.value = 0;
     const rt = pmrem.fromScene(envScene, 0, 0.5, 500);
     u.skyGain.value = g0; u.showSunDisc.value = d0;
-    if (envRT) envRT.dispose(); envRT = rt; scene.environment = rt.texture;
+    if (envRT) envRT.dispose(); envRT = rt; scene.environment = rt.texture; if (E.onEnv) E.onEnv(rt.texture);
   }
 
   // --- weather particles
